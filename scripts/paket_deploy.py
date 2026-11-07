@@ -42,6 +42,9 @@ DIRS = {
     "deploy": [],                        # Caddyfile, service, install.sh
 }
 
+# Ekstensi yang diperlakukan sebagai teks (lihat salin()).
+TEKS = {".sh", ".service", ".py", ".js", ".css", ".html", ".htm", ".md", ".json"}
+
 
 def _kosongkan_key(node):
     """Kosongkan setiap nilai bernama 'key' di dalam node. Rekursif.
@@ -101,14 +104,28 @@ def buat_db_bersih(src, dst):
         conn.close()
 
 
+def salin(src, dest):
+    """Salin berkas; untuk berkas teks, paksa akhir baris LF.
+
+    Di Windows, core.autocrlf bisa membuat skrip .sh ber-CRLF. Kalau itu ikut
+    terkirim, VPS menolak menjalankannya dengan
+    "/usr/bin/env: 'bash\\r': No such file or directory" — pesan yang tidak
+    menunjukkan penyebab sebenarnya. Normalisasi di sini membuat bundel tetap
+    benar apa pun setelan Git di mesin pembuatnya.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src.suffix.lower() in TEKS or src.name == "Caddyfile":
+        dest.write_bytes(src.read_bytes().replace(b"\r\n", b"\n"))
+    else:
+        shutil.copy2(src, dest)
+
+
 def copy_file(rel, dest_root):
     src = ROOT / rel
     if not src.is_file():
         print("  ! lewat (tidak ada):", rel)
         return False
-    dest = dest_root / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest)
+    salin(src, dest_root / rel)
     return True
 
 
@@ -136,9 +153,7 @@ def main():
             if f.name in skip:
                 continue
             rel = f.relative_to(ROOT)
-            dest = STAGE / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(f, dest)
+            salin(f, STAGE / rel)
             total += 1
     print("   %d berkas" % total)
 
