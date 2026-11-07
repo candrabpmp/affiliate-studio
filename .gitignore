@@ -29,3 +29,7 @@ hackathon/RIWAYAT-CHAT.*
 # repo, bahkan sebagai riwayat. Untuk mengirim ke juri, pakai berkas di folder
 # ini secara langsung, atau versi REDACTED.
 hackathon/chat-history-raw/
+
+# paket unggahan manual ke GitHub (dibuat ulang kapan saja)
+_upload/
+_upload.zip
