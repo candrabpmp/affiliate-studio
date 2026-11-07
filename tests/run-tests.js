@@ -4,8 +4,8 @@
    Menjalankan 20 test case terhadap Reviewer sungguhan di browser
    (bukan tiruan), lalu membandingkan putusannya dengan harapan.
 
-   Jalankan: node hackathon/run-tests.js
-   Hasil  : hackathon/results.json + hackathon/hasil-pengujian.html
+   Jalankan: node tests/run-tests.js
+   Hasil  : tests/results.json + tests/hasil-pengujian.html
    ============================================================ */
 const fs = require('fs');
 const path = require('path');

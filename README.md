@@ -76,7 +76,7 @@ styles.css         tampilan
 index.html         halaman aplikasi
 scripts/           pengambilan data produk dari product sheet
 assets/            media produk (gambar + video) untuk demo offline
-hackathon/         seluruh berkas pengumpulan + hasil pengujian
+tests/             runner 20 kasus uji + hasilnya
 ```
 
 ## Pengujian
@@ -86,11 +86,13 @@ menolak segalanya juga akan lulus 20/20, dan itu bukan sistem yang pintar.
 
 ```bash
 python server.py          # di jendela lain
-node hackathon/run-tests.js
+node tests/run-tests.js
 ```
 
-Hasil terakhir: **20/20 lulus**. Rincian, screenshot, dan daftar cacat yang
-ditemukan selama pengujian ada di `hackathon/README.md`.
+Hasil terakhir: **20/20 lulus** (`tests/results.json`). Lima kasus di antaranya
+gagal pada percobaan pertama dan memperlihatkan empat cacat nyata di rulebook —
+`\b100%\b` yang mustahil cocok, gerbang sumber yang terlalu longgar, pola
+superlatif yang terlalu luas, dan aturan format yang memeriksa draf lama.
 
 ## Batas yang diakui
 
@@ -103,5 +105,6 @@ ditemukan selama pengujian ada di `hackathon/README.md`.
 
 ## Berkas pengumpulan
 
-Lihat `hackathon/` — deskripsi proyek, lembar akuntabilitas, hasil pengujian,
-diagram arsitektur, sampul, dan skrip video demo.
+Dokumen pengumpulan — deskripsi proyek, lembar akuntabilitas, diagram arsitektur,
+sampul, dan skrip video — diserahkan lewat formulir lomba, bukan lewat repo ini.
+Repo ini sengaja hanya memuat kode yang bisa dijalankan dan diuji.

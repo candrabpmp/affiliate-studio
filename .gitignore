@@ -33,3 +33,8 @@ hackathon/chat-history-raw/
 # paket unggahan manual ke GitHub (dibuat ulang kapan saja)
 _upload/
 _upload.zip
+
+# folder pengumpulan: dokumen, sampul, hasil uji, dan transcript mentah.
+# Dikirim lewat formulir pengumpulan, bukan lewat repo. Repo ini khusus
+# kode yang bisa dijalankan.
+hackathon/
