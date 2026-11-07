@@ -43,7 +43,11 @@ ROOT = Path(__file__).resolve().parent
 # AFFILIATE_DB bisa menunjuk file lain — dipakai untuk uji coba supaya database
 # asli tidak pernah tersentuh.
 DB_PATH = Path(os.environ.get("AFFILIATE_DB") or (ROOT / "data" / "affiliate.db"))
-HOST = "127.0.0.1"
+# Di localhost cukup 127.0.0.1. Di VPS server tetap di loopback dan Caddy yang
+# menghadap internet, jadi default ini sengaja TIDAK diubah menjadi 0.0.0.0.
+# Kalau benar-benar perlu mendengarkan langsung tanpa reverse proxy, set
+# AFFILIATE_HOST=0.0.0.0 — tapi itu membuka port mentah ke internet.
+HOST = os.environ.get("AFFILIATE_HOST", "127.0.0.1").strip() or "127.0.0.1"
 PORT = int(os.environ.get("AFFILIATE_PORT", "8787"))
 
 # Video hasil generator (Veo/Gemini/Kling) TIDAK disimpan di SQLite. Database-nya
@@ -62,6 +66,40 @@ MAX_SNAPSHOTS = 60
 SNAPSHOT_EVERY = 120
 
 _lock = threading.Lock()
+
+# ---------------------------------------------------------------- CORS
+# Di localhost semua port boleh (panel preview jalan di port lain). Di VPS,
+# origin asli didaftarkan lewat AFFILIATE_ORIGIN (pisahkan dengan koma) supaya
+# situs lain tidak bisa membaca data lewat browser pengunjung. Origin internet
+# yang tidak terdaftar ditolak — bukan sekadar headernya tidak dikirim.
+_ORIGIN_ALLOW = [o.strip().rstrip("/") for o in
+                 (os.environ.get("AFFILIATE_ORIGIN") or "").split(",") if o.strip()]
+_LOCAL_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost)(:\d+)?$")
+
+
+def origin_ok(origin):
+    if not origin:
+        return False
+    return origin.rstrip("/") in _ORIGIN_ALLOW or bool(_LOCAL_ORIGIN.match(origin))
+
+
+# ------------------------------------------------- berkas yang boleh keluar
+# Dulu seluruh folder proyek disajikan apa adanya (SimpleHTTPRequestHandler
+# dengan directory=ROOT). Di localhost itu tidak berbahaya; begitu server
+# menghadap internet, artinya data/affiliate.db, .git/config, dan server.py
+# sendiri bisa diunduh siapa pun yang tahu URL-nya. Jadi sekarang hanya berkas
+# web yang lolos: daftar putih berdasarkan ekstensi, folder tersembunyi ditolak.
+STATIC_EXT = {".html", ".htm", ".js", ".css", ".ico",
+              ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"}
+
+
+def static_ok(path):
+    if not path or path == "/":
+        return True
+    for seg in path.split("/"):
+        if seg.startswith("."):
+            return False            # .git, .env, .workbuddy-ai, dsb.
+    return Path(path).suffix.lower() in STATIC_EXT
 
 
 def db():
@@ -386,12 +424,20 @@ class Handler(SimpleHTTPRequestHandler):
     # Origin internet dan file:// (Origin: null) sengaja ditolak.
     def _cors(self):
         origin = self.headers.get("Origin")
-        if origin and re.match(r"^http://(127\.0\.0\.1|localhost)(:\d+)?$", origin):
+        if origin_ok(origin):
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Filename")
             self.send_header("Access-Control-Allow-Private-Network", "true")
+
+    # Semua permintaan berkas statis (GET maupun HEAD) lewat sini. Kalau path-nya
+    # tidak lolos daftar putih, jawab 404 — jangan pernah menyentuh disk.
+    def send_head(self):
+        if not static_ok(urlparse(self.path).path):
+            self.send_error(404, "File not found")
+            return None
+        return super().send_head()
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -549,7 +595,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path, qs = self._path()
         if path == "/api/health":
-            return self._json({"ok": True, "db": str(DB_PATH), "rev": read_state()["rev"]})
+            # path database tidak perlu keluar ke publik — cukup status.
+            return self._json({"ok": True, "rev": read_state()["rev"]})
         if path == "/api/state":
             rev = qs.get("rev", [None])[0]
             if rev is not None:

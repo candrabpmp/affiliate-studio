@@ -34,6 +34,10 @@ hackathon/chat-history-raw/
 _upload/
 _upload.zip
 
+# bundel deploy ke VPS: 54 MB, dibuat ulang oleh scripts/paket_deploy.py.
+# Berisi database yang sudah dibersihkan, tapi tetap jangan masuk repo.
+_deploy/
+
 # folder pengumpulan: dokumen, sampul, hasil uji, dan transcript mentah.
 # Dikirim lewat formulir pengumpulan, bukan lewat repo. Repo ini khusus
 # kode yang bisa dijalankan.

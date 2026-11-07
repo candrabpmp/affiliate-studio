@@ -1,0 +1,43 @@
+[Unit]
+Description=Affiliate Studio (server.py)
+Documentation=https://github.com/candrabpmp/affiliate-studio
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=affiliate
+Group=affiliate
+WorkingDirectory=/opt/affiliate-studio
+
+# AFFILIATE_HOST / AFFILIATE_PORT / AFFILIATE_ORIGIN ada di sini.
+# Berkas ini tidak ikut repo — dibuat oleh install.sh.
+EnvironmentFile=/opt/affiliate-studio/.env
+ExecStart=/usr/bin/python3 /opt/affiliate-studio/server.py
+
+Restart=always
+RestartSec=3
+# Jangan restart berulang tanpa henti kalau server memang selalu gagal start.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# ---------------------------------------------------------------- pengamanan
+# Server ini hanya bicara dengan Caddy di loopback. Batasi dampaknya kalau
+# suatu saat ada celah: tidak bisa menulis ke sistem, tidak bisa melihat home
+# user lain, tidak punya hak tambahan.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Satu-satunya tempat yang boleh ditulis: database, media hasil ekstraksi,
+# dan video yang diunggah lewat UI.
+ReadWritePaths=/opt/affiliate-studio/data /opt/affiliate-studio/assets
+
+[Install]
+WantedBy=multi-user.target

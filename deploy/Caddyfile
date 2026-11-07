@@ -1,0 +1,61 @@
+# =============================================================================
+# Caddy untuk Affiliate Studio di VPS tanpa domain
+# -----------------------------------------------------------------------------
+# Masalahnya: Let's Encrypt tidak menerbitkan sertifikat untuk alamat IP mentah
+# (belum, untuk publik). Tanpa sertifikat, browser menampilkan "Not secure" dan
+# sebagian juri langsung menutup tab.
+#
+# Solusinya bukan beli domain, tapi memakai sslip.io — DNS publik yang selalu
+# menjawab "<ip-dengan-strip>.sslip.io" dengan IP tersebut. Jadi:
+#
+#     43-128-104-197.sslip.io   ->   43.128.104.197
+#
+# Nama itu bisa diverifikasi Let's Encrypt lewat HTTP-01 (port 80 kita terbuka),
+# jadi sertifikatnya asli dan diperbarui otomatis. Kalau nanti sudah punya
+# domain sendiri, cukup ganti SITE_ADDRESS di /etc/default/caddy — tidak perlu
+# menyentuh berkas ini.
+#
+# Pasang:  cp deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+# =============================================================================
+
+{
+	# Email untuk notifikasi kedaluwarsa sertifikat. Boleh dikosongkan.
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+# ---------------------------------------------------------------------------
+# Situs utama
+# ---------------------------------------------------------------------------
+{$SITE_ADDRESS:43-128-104-197.sslip.io} {
+	encode zstd gzip
+
+	# Lapis kedua. server.py sudah menolak semua ini (daftar putih ekstensi),
+	# tapi menolaknya di tepi berarti permintaannya tidak pernah sampai ke
+	# proses Python sama sekali.
+	@rahasia path /data/* /.git/* /server.py /scripts/* /tests/* /hackathon/* /githooks/* /_upload* /.env /README.md
+	respond @rahasia 404
+
+	reverse_proxy 127.0.0.1:8787 {
+		header_up X-Real-IP {remote_host}
+		# unggah video 200 MB — jangan putus di tengah jalan
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+
+	# Kalau URL ini akan dibagikan luas dan Bos tidak ingin ada orang iseng
+	# mengubah data demo, buka tiga baris di bawah lalu jalankan
+	# `caddy hash-password` untuk membuat hash-nya.
+	#
+	# basic_auth {
+	# 	juri $2a$14$HASIL_DARI_caddy_hash-password
+	# }
+}
+
+# ---------------------------------------------------------------------------
+# Akses lewat IP mentah — dialihkan supaya tidak ada yang tertinggal di HTTP
+# ---------------------------------------------------------------------------
+http://43.128.104.197 {
+	redir https://{$SITE_ADDRESS:43-128-104-197.sslip.io}{uri} permanent
+}
