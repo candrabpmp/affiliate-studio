@@ -109,31 +109,72 @@ alamatnya publik. Semua sudah diuji ulang (lihat `server.py`):
 
 ---
 
-## Satu hal yang perlu diputuskan: LLM
+## LLM: key di server, bukan di browser
 
-Ini bukan soal deploy, tapi menentukan apakah juri melihat 3 agen bekerja.
+**Sudah dipasang.** Ini yang berubah dan alasannya.
 
-`pengaturan.js` menunjuk ke `http://localhost:20128/v1` — gateway LLM di
-laptop Bos. Di VPS, `localhost` adalah VPS itu sendiri, dan di sana tidak ada
-apa pun yang mendengarkan di port 20128. Akibatnya:
+Aplikasi aslinya memanggil LLM langsung dari browser, dengan key tersimpan di
+state. Di localhost itu wajar. Di VPS itu masalah: key yang dikirim ke browser
+bisa dibaca siapa pun lewat DevTools, dan endpoint-nya bisa dipakai orang lain
+untuk menghabiskan kuota.
 
-> Tanpa LLM, tombol **Generate** akan menolak dengan
-> *"LLM belum dikonfigurasi"* (`runAgentPipeline` mensyaratkannya di baris
-> pertama). Jadwal, produk, dan data demo tetap tampil — tapi pipeline
-> Planner → Writer → Reviewer tidak bisa dijalankan.
+Sekarang:
 
-Tiga pilihan:
+```
+browser  ──POST /api/llm/chat/completions──▶  server.py  ──+Authorization──▶  upstream
+         (tanpa key)                                        (key dari .env)
+```
 
-| Cara | Kapan cocok | Konsekuensi |
-|---|---|---|
-| **A. Biarkan mati** | Juri hanya perlu melihat aplikasi + video demo | Paling aman, tapi agen tidak bisa dicoba langsung |
-| **B. Endpoint `/api/generate` di server** | Juri perlu mencoba sendiri | Perlu kerja tambahan: panggilan LLM pindah dari browser ke server, key disimpan di `.env` VPS. Ini juga yang dibutuhkan untuk multi-user ("API disediakan platform") |
-| **C. Tunnel ke laptop** | Demo terjadwal, laptop pasti nyala | `ssh -R 20128:localhost:20128` — rapuh, jangan dipakai untuk penjurian |
+Bentuk permintaan dan balasan tetap OpenAI-compatible, jadi kode agen tidak
+berubah. Yang menentukan adalah `.env` di VPS:
 
-**Rekomendasi saya: B.** Itu satu-satunya jalan yang sekaligus menyelesaikan
-masalah key (key tidak pernah sampai ke browser), dan sesuai arah multi-user
-yang Bos sebutkan. Ukurannya sedang: satu endpoint + pemindahan pemanggilan
-LLM dari `agents.js` ke server.
+```
+LLM_UPSTREAM=http://127.0.0.1:20128/v1
+LLM_API_KEY=<kunci gateway>
+LLM_MODEL=ag/gemini-3.8-flash-low
+LLM_RATE_PER_10MIN=60
+```
+
+`GET /api/llm/status` memberi tahu UI apakah mode ini aktif. Kalau aktif,
+`aiCfg()` memakai `location.origin + '/api/llm'` dan mengabaikan key di state —
+sehingga `GET /api/state` tidak lagi memuat kunci apa pun.
+
+### Batas laju wajib, bukan kemewahan
+
+Endpoint ini publik. Tanpa batas, satu orang bisa menekan Generate berulang dan
+menghabiskan kuota. `llm_allow()` membatasi 60 permintaan per 10 menit per IP
+(dibaca dari `X-Real-IP` yang diisi Caddy, karena di belakang proxy semua
+permintaan tampak datang dari 127.0.0.1). Bisa diubah lewat
+`LLM_RATE_PER_10MIN`.
+
+### Masalahnya: VPS tidak bisa menjangkau gateway di laptop
+
+Gateway Bos ada di `127.0.0.1:20128` **di laptop**, dan laptop tidak punya IP
+publik. Supaya rantainya bersambung, jalankan di laptop:
+
+```bash
+bash deploy/tunnel-llm.sh          # biarkan terminal ini terbuka
+```
+
+Skrip itu membuat port 20128 **di VPS** diteruskan ke port 20128 di laptop,
+dan menyambung ulang sendiri kalau putus.
+
+| Kondisi | Perilaku situs |
+|---|---|
+| Terowongan hidup | Generate berfungsi penuh — Planner → Writer → Reviewer |
+| Terowongan mati | Situs tetap bisa dibuka dan dijelajahi; Generate menjawab *"LLM tidak terjangkau"* |
+
+**Ini rapuh untuk penjurian.** Kalau laptop tidur atau Wi-Fi putus, juri
+melihat pesan error. Untuk demo yang benar-benar mandiri, ganti `LLM_UPSTREAM`
+ke penyedia cloud (butuh key sendiri) — kode tidak perlu diubah lagi, cukup
+`.env` lalu `systemctl restart affiliate-studio`.
+
+### Mencabut kunci dari VPS
+
+```bash
+sudo sed -i '/^LLM_API_KEY=/d' /opt/affiliate-studio/.env
+sudo systemctl restart affiliate-studio
+```
 
 ---
 
@@ -150,6 +191,8 @@ LLM dari `agents.js` ke server.
 | Sertifikat | `CN=43-128-104-197.sslip.io`, valid 7 Nov 2026 – 5 Feb 2027 |
 | Port 8787 | hanya `127.0.0.1`, tidak terbuka ke internet |
 | Render di browser | 13 produk, status review, chip agen, `rev 281` tampil |
+| `POST /api/llm/chat/completions` (lewat HTTPS publik) | **200**, balasan `"Halo"` dari model sungguhan |
+| `GET /api/llm/status` | `{"configured":true,"model":"ag/gemini-3.8-flash-low"}` |
 
 Perintah untuk mengulang pemeriksaan kapan saja:
 

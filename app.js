@@ -4081,6 +4081,29 @@ function viewJadwal() {
    Satu konfigurasi untuk semua teks (Threads & TikTok). Bentuk lama
    {threads:{...}, tiktok:{...}} dimigrasikan sekali di sini memakai isi
    kartu Threads — konfigurasi yang dulu dipakai untuk menulis teks. */
+/* --- apakah server mengurus key LLM sendiri? ---
+   Di VPS, key tidak boleh sampai ke browser: siapa pun bisa membacanya lewat
+   DevTools, dan endpoint-nya bisa dipakai orang lain untuk menghabiskan kuota.
+   Kalau /api/llm/status menjawab configured, semua panggilan LLM diarahkan ke
+   proksi server dan key di state diabaikan. Kalau tidak (mis. di localhost
+   dengan gateway sendiri), perilaku lama tetap dipakai. */
+let SERVER_LLM = null;
+async function probeServerLlm() {
+  try {
+    const r = await fetch('/api/llm/status', { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d && d.configured) {
+      SERVER_LLM = d;
+      // Penanda di <html> supaya mode ini bisa diperiksa dari luar
+      // (uji otomatis, atau sekadar lihat Inspect Element) tanpa membuka
+      // panel log.
+      document.documentElement.dataset.llmServer = '1';
+      log('info', 'LLM diurus server — key tidak disimpan di browser');
+    }
+  } catch (e) { /* server tanpa proksi LLM: pakai setelan pengguna */ }
+}
+
 function aiCfg() {
   const A = S.ai = S.ai || {};
   if (!A.text) {
@@ -4091,6 +4114,17 @@ function aiCfg() {
   Object.keys(AI_DEFAULT).forEach((k) => { if (A.text[k] === undefined) A.text[k] = AI_DEFAULT[k]; });
   delete A.text.on;          // toggle "pakai LLM" sudah dihapus
   delete A.threads; delete A.tiktok;
+
+  // baseUrl harus absolut: normalizeBase() menambahkan "http://" pada path
+  // relatif, sehingga '/api/llm' akan menjadi 'http:///api/llm'.
+  if (SERVER_LLM && SERVER_LLM.configured) {
+    return {
+      ...A.text,
+      baseUrl: location.origin + (SERVER_LLM.basePath || '/api/llm'),
+      key: '',
+      model: SERVER_LLM.model || A.text.model
+    };
+  }
   return A.text;
 }
 
@@ -7094,4 +7128,5 @@ setInterval(() => {
 /* ---------------- init ---------------- */
 if (SEED_NOTE) log('info', SEED_NOTE);
 render();              // tampilkan layar "menghubungkan…" dulu
+probeServerLlm();      // tanya apakah key LLM diurus server (VPS)
 initStore();           // lalu ambil state dari database; tanpa fallback lokal

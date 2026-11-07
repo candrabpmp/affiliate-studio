@@ -35,6 +35,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -100,6 +102,47 @@ def static_ok(path):
         if seg.startswith("."):
             return False            # .git, .env, .workbuddy-ai, dsb.
     return Path(path).suffix.lower() in STATIC_EXT
+
+
+# ------------------------------------------------------------ proksi LLM
+# Kenapa key tidak boleh di browser
+# ---------------------------------
+# Aplikasi ini aslinya memanggil LLM langsung dari browser, dengan key yang
+# disimpan di state. Di localhost itu wajar. Di VPS, key yang dikirim ke
+# browser bisa dibaca siapa pun lewat DevTools — dan endpoint-nya bisa dipakai
+# orang lain untuk menghabiskan kuota.
+#
+# Jadi di server: browser memanggil /api/llm/chat/completions tanpa key,
+# server yang menyisipkan key ke permintaan ke atas. Bentuk permintaan dan
+# balasan tetap OpenAI-compatible, sehingga kode klien tidak perlu diubah.
+#
+# Kalau LLM_UPSTREAM kosong, endpoint ini menjawab 503 dan aplikasi kembali
+# memakai setelan pengguna seperti biasa (mode lokal tidak terpengaruh).
+LLM_UPSTREAM = (os.environ.get("LLM_UPSTREAM") or "").strip().rstrip("/")
+LLM_API_KEY = (os.environ.get("LLM_API_KEY") or "").strip()
+LLM_MODEL = (os.environ.get("LLM_MODEL") or "").strip()
+LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "180"))
+LLM_RATE = int(os.environ.get("LLM_RATE_PER_10MIN", "60"))   # per IP / 10 menit
+
+_llm_hits = {}
+_llm_lock = threading.Lock()
+
+
+def llm_allow(ip):
+    """Batas laju sederhana per IP. Tanpa ini, satu orang bisa menghabiskan
+    kuota LLM lewat halaman publik hanya dengan menekan Generate berulang."""
+    now = time.time()
+    with _llm_lock:
+        arr = [t for t in (_llm_hits.get(ip) or []) if now - t < 600]
+        if len(arr) >= LLM_RATE:
+            _llm_hits[ip] = arr
+            return False
+        arr.append(now)
+        _llm_hits[ip] = arr
+        if len(_llm_hits) > 1000:                 # jangan tumbuh tanpa batas
+            for k in [k for k, v in _llm_hits.items() if not v]:
+                _llm_hits.pop(k, None)
+        return True
 
 
 def db():
@@ -476,6 +519,71 @@ class Handler(SimpleHTTPRequestHandler):
         u = urlparse(self.path)
         return u.path, parse_qs(u.query)
 
+    def _client_ip(self):
+        # Di belakang Caddy semua permintaan datang dari 127.0.0.1, jadi alamat
+        # asli dibaca dari X-Real-IP yang diisi Caddyfile.
+        ip = (self.headers.get("X-Real-IP") or "").strip()
+        return ip or self.client_address[0]
+
+    # ---- proksi LLM: /api/llm/<sisanya> diteruskan ke LLM_UPSTREAM/<sisanya>
+    def _llm_forward(self, path):
+        if not LLM_UPSTREAM:
+            return self._json({
+                "error": "LLM belum disiapkan di server",
+                "detail": "Isi LLM_UPSTREAM (dan LLM_API_KEY) di berkas .env, "
+                          "lalu jalankan ulang layanan.",
+            }, 503)
+        if not llm_allow(self._client_ip()):
+            return self._json({
+                "error": "Terlalu banyak permintaan LLM dari alamat ini. "
+                         "Coba lagi beberapa menit lagi."
+            }, 429)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length > 1024 * 1024:                  # prompt kita jauh di bawah ini
+            return self._json({"error": "body terlalu besar"}, 413)
+        body = self.rfile.read(length) if length else b""
+
+        url = LLM_UPSTREAM + path[len("/api/llm"):]
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "application/json")
+        if LLM_API_KEY:
+            req.add_header("Authorization", "Bearer " + LLM_API_KEY)
+
+        try:
+            with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as r:
+                code = r.status
+                ctype = r.headers.get("Content-Type") or "application/json"
+                data = r.read()
+        except urllib.error.HTTPError as e:
+            # kesalahan dari penyedia diteruskan apa adanya supaya pesan di UI
+            # tetap informatif (401 key salah, 429 kuota, 404 model keliru)
+            code = e.code
+            ctype = (e.headers.get("Content-Type") if e.headers else None) or "application/json"
+            try:
+                data = e.read()
+            except Exception:
+                data = b'{"error":"gagal membaca balasan penyedia"}'
+        except Exception as e:
+            return self._json({
+                "error": "LLM tidak terjangkau: %s" % e,
+                "detail": "Periksa LLM_UPSTREAM dan koneksi keluar dari server.",
+            }, 502)
+
+        self.send_response(code)
+        self._cors()
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     # ---- video: streaming dengan dukungan Range (supaya scrub di player jalan)
     def _send_video(self, qs):
         key = (qs.get("key", [""])[0] or "").strip()
@@ -629,6 +737,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self._send_video(qs)
         if path == "/api/videos":
             return self._json({"dir": str(VIDEO_DIR), "items": video_list()})
+        if path == "/api/llm/status":
+            # Dipakai UI untuk tahu apakah key LLM diurus server. Kalau ya,
+            # browser tidak perlu (dan tidak boleh) menyimpan key sendiri.
+            return self._json({
+                "configured": bool(LLM_UPSTREAM),
+                "model": LLM_MODEL,
+                "basePath": "/api/llm",
+            })
         if path.startswith("/api/"):
             return self._json({"error": "endpoint tidak dikenal"}, 404)
         return super().do_GET()
@@ -668,6 +784,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path, qs = self._path()
+        if path.startswith("/api/llm/"):
+            return self._llm_forward(path)
         if path == "/api/video":
             return self._video_upload(qs)
         if path == "/api/extract":
