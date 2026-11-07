@@ -12,7 +12,7 @@ Tantangan C · Agen Kreator. Semua berkas pengumpulan ada di folder ini.
 | **Lembar akuntabilitas** | siap | `LEMBAR-AKUNTABILITAS.md` |
 | **Hasil pengujian + screenshot** | siap | `hasil-pengujian.html` · `results.json` · `screenshot-hasil.png` |
 | Diagram arsitektur | siap | `arsitektur.svg` · `arsitektur.png` |
-| Video demo 5–8 menit | **terekam, belum final** | `demo-afiliasi.mp4` — 11:04, 1276×1354, **tanpa narasi**, 589 MB. Alur penolakan R-02 sudah terekam (lihat `SKRIP-DEMO.md` untuk sisa yang perlu dirapikan) |
+| Video demo 5–8 menit | **siap dipakai, satu catatan** | **`demo-final.mp4`** — 1920×1080, 11:08, 80 MB, narasi lewat teks (tanpa audio). Menampilkan 3 loop penolakan sampai eskalasi + penjadwalan. **Durasi 11:08 masih di atas batas 5–8 menit.** Versi rekaman pertama `demo-v1-tanpa-caption.mp4` (589 MB) disimpan sebagai cadangan |
 | Berbagi produk (nilai WorkBuddy) | siap | `DESKRIPSI-PROYEK.md` §8 |
 | Source code | **perlu dipublikasikan** | repo ini; lihat "Yang masih perlu Bos kerjakan" |
 | Gambar sampul 16:9 (**380×216**) | siap | `sampul-v1-380x216.png` (gelap) · `sampul-v2-380x216.png` (isometrik) · `sampul-v3-380x216.png` (tanpa identitas hackathon). Versi 3× `sampul-v{1,2,3}-1140x648.png` untuk unggahan tajam. Sumber `sampul-380.html` · prompt `PROMPT-SAMPUL.md` |
@@ -49,7 +49,10 @@ Satu cacat lagi ditemukan saat memeriksa kode, bukan saat menguji: **R-07 memeri
 
 ## Yang masih perlu Bos kerjakan
 
-1. **Rekam video demo** mengikuti `SKRIP-DEMO.md` (5–8 menit, wajib).
+1. **Video demo** — sudah ada (`demo-final.mp4`). Sisa satu keputusan: durasinya
+   11:08, sedangkan panduan meminta 5–8 menit. Kalau mau dipangkas ke ±7:30,
+   bagian yang paling aman dipercepat 2× adalah loop kedua dan ketiga — alurnya
+   tetap utuh karena ketiga loop memang berulang.
 2. **Publikasikan repo** (wajib). Repo lokal sudah siap dan sudah di-commit
    (`main`, 181 berkas, `data/` dan video tidak ikut). Yang tersisa hanya
    autentikasi:
