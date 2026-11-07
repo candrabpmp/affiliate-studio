@@ -50,10 +50,15 @@ Satu cacat lagi ditemukan saat memeriksa kode, bukan saat menguji: **R-07 memeri
 ## Yang masih perlu Bos kerjakan
 
 1. **Rekam video demo** mengikuti `SKRIP-DEMO.md` (5–8 menit, wajib).
-2. **Publikasikan repo** (wajib). Repo ini belum punya `.git`. Perintahnya:
+2. **Publikasikan repo** (wajib). Repo lokal sudah siap dan sudah di-commit
+   (`main`, 181 berkas, `data/` dan video tidak ikut). Yang tersisa hanya
+   autentikasi:
    ```bash
-   git init && git add . && git commit -m "Affiliate Studio — Tantangan C"
+   # setelah gh terpasang dan login
    gh repo create affiliate-studio --public --source=. --push
    ```
-   Sebelum itu, pastikan `data/affiliate.db` **tidak** ikut ter-commit (berisi kunci API dan data produk nyata). Tambahkan `data/` dan `.workbuddy-ai/memory/` ke `.gitignore`.
+   Tanpa `gh`: buat repo kosong di github.com/new, lalu
+   `git remote add origin <url>` dan `git push -u origin main`.
+   Sebelum push, ganti identitas commit: `git config user.name "..."`,
+   `git config user.email "..."`, lalu `git commit --amend --reset-author --no-edit`.
 3. **Tautan proyek** (bonus, opsional): aplikasi ini butuh server lokal, jadi tidak bisa langsung di-hosting statis. Kalau mau dikejar, bagian demo yang paling aman adalah halaman `hasil-pengujian.html`.
