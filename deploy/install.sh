@@ -13,7 +13,9 @@ set -euo pipefail
 TARBALL="${1:-/root/affiliate-studio.tar.gz}"
 APP_DIR=/opt/affiliate-studio
 SERVICE=affiliate-studio
-SITE_ADDRESS="${SITE_ADDRESS:-43-128-104-197.sslip.io}"
+# Alamat situs bisa diberikan sebagai argumen kedua, karena `sudo VAR=nilai
+# bash ...` tidak selalu meneruskan environment tergantung setelan sudoers.
+SITE_ADDRESS="${2:-${SITE_ADDRESS:-43-128-104-197.sslip.io}}"
 
 say() { printf "\n\033[1;36m== %s\033[0m\n" "$*"; }
 ok()  { printf "   \033[1;32mok\033[0m %s\n" "$*"; }

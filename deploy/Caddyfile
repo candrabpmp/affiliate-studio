@@ -19,8 +19,16 @@
 # =============================================================================
 
 {
-	# Email untuk notifikasi kedaluwarsa sertifikat. Boleh dikosongkan.
-	email {$ACME_EMAIL:admin@example.com}
+	# Email kontak ACME sengaja TIDAK diisi.
+	#
+	# Percobaan pertama memakai placeholder admin@example.com dan Let's Encrypt
+	# menolaknya: "contact email has forbidden domain example.com". Caddy lalu
+	# diam-diam beralih ke ZeroSSL — tetap berhasil, tapi berisik di log dan
+	# membingungkan saat membaca sertifikat yang terbit.
+	#
+	# Tanpa kontak, Let's Encrypt menerima permintaan. Kalau Bos ingin email
+	# pengingat kedaluwarsa, isi dengan alamat nyata:
+	#   email nama@domainasli.id
 }
 
 # ---------------------------------------------------------------------------

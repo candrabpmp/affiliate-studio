@@ -1,6 +1,9 @@
 # Deploy ke VPS — tanpa domain
 
-VPS: `43.128.104.197` · Ubuntu · Caddy sudah terpasang (masih halaman bawaan)
+**Status: sudah terpasang dan live → https://43-128-104-197.sslip.io/**
+
+VPS: `43.128.104.197` · Ubuntu 24.04.4 LTS · Python 3.12.3 · Caddy 2.11.4
+User SSH: `ubuntu` (punya `sudo` tanpa password) — **bukan `root`**
 
 ---
 
@@ -31,29 +34,42 @@ Kalau nanti sudah punya domain sendiri, cukup ganti satu baris di
 Dari folder proyek, di Git Bash:
 
 ```bash
-bash deploy/deploy.sh root@43.128.104.197
+bash deploy/deploy.sh affiliate-vps
+# atau tanpa alias: bash deploy/deploy.sh ubuntu@43.128.104.197
 ```
 
-Skrip itu: membuat bundel → mengirim lewat `scp` → menjalankan `install.sh`
-di VPS. Total ±5 menit (54 MB unggahan).
+Skrip itu: membuat bundel → mengirim lewat `scp` ke `/tmp` → menjalankan
+`install.sh` lewat `sudo` di VPS. Total ±5 menit (54 MB unggahan).
 
-**Kalau belum ada SSH key** (kemungkinan besar ini kasusnya — dari laptop ini
-belum ada kunci dan `root@43.128.104.197` menolak `publickey`):
+Alias `affiliate-vps` dibuat sekali di `~/.ssh/config`:
+
+```
+Host affiliate-vps
+    HostName 43.128.104.197
+    User ubuntu
+    IdentityFile ~/.ssh/id_ed25519_deploy
+    IdentitiesOnly yes
+```
+
+Lalu sekali saja, supaya tidak perlu password:
 
 ```bash
-ssh-keygen -t ed25519 -C "laptop-candra"     # tekan Enter terus
-ssh-copy-id root@43.128.104.197              # masukkan password VPS sekali
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_deploy -N ""
+ssh-copy-id -i ~/.ssh/id_ed25519_deploy.pub ubuntu@43.128.104.197
 ```
-
-Setelah itu perintah deploy bisa diulang kapan saja untuk memperbarui.
 
 ### Kalau mau manual
 
 ```bash
 python scripts/paket_deploy.py               # hasil: _deploy/affiliate-studio.tar.gz
-scp _deploy/affiliate-studio.tar.gz deploy/install.sh root@43.128.104.197:/root/
-ssh root@43.128.104.197 "bash /root/install.sh /root/affiliate-studio.tar.gz"
+scp _deploy/affiliate-studio.tar.gz deploy/install.sh ubuntu@43.128.104.197:/tmp/
+ssh ubuntu@43.128.104.197 \
+  "sudo bash /tmp/install.sh /tmp/affiliate-studio.tar.gz 43-128-104-197.sslip.io"
 ```
+
+Argumen ketiga penting: `sudo VAR=nilai bash ...` tidak selalu meneruskan
+environment, tergantung setelan `sudoers`. Karena itu alamat situs dikirim
+sebagai argumen, bukan variabel.
 
 ---
 
@@ -121,17 +137,27 @@ LLM dari `agents.js` ke server.
 
 ---
 
-## Verifikasi setelah deploy
+## Hasil verifikasi (diukur dari luar VPS, 7 Nov 2026)
+
+| Uji | Hasil |
+|---|---|
+| `GET /` | **200** |
+| `GET /app.js`, `/agents.js`, `/styles.css`, `/assets/manifest.js` | **200** |
+| `GET /data/affiliate.db` | **404** |
+| `GET /.env`, `/server.py`, `/.git/config`, `/deploy/Caddyfile` | **404** |
+| `GET /api/health` | `{"ok":true,"rev":281}` — data demo utuh |
+| `http://` (port 80) | **308** → dialihkan ke HTTPS |
+| Sertifikat | `CN=43-128-104-197.sslip.io`, valid 7 Nov 2026 – 5 Feb 2027 |
+| Port 8787 | hanya `127.0.0.1`, tidak terbuka ke internet |
+| Render di browser | 13 produk, status review, chip agen, `rev 281` tampil |
+
+Perintah untuk mengulang pemeriksaan kapan saja:
 
 ```bash
-curl -I https://43-128-104-197.sslip.io/          # harus 200, ada Strict-Transport-Security
-curl -o /dev/null -w '%{http_code}\n' \
-  https://43-128-104-197.sslip.io/data/affiliate.db   # harus 404
-curl -s https://43-128-104-197.sslip.io/api/health    # {"ok":true,"rev":...}
+curl -s -o /dev/null -w '%{http_code}\n' https://43-128-104-197.sslip.io/
+curl -s -o /dev/null -w '%{http_code}\n' https://43-128-104-197.sslip.io/data/affiliate.db
+curl -s https://43-128-104-197.sslip.io/api/health
 ```
-
-Lalu buka di browser, cek jadwal posting masih tampil, dan coba buka
-`/data/affiliate.db` — harus 404.
 
 ---
 
@@ -157,6 +183,21 @@ crontab -e
 ditimpa** saat deploy ulang, jadi data demo aman.
 
 ---
+
+## Dua bug yang muncul saat deploy pertama
+
+Dicatat supaya tidak terulang:
+
+1. **`str(Path)` menghasilkan backslash di Windows.** Arsip berisi entri
+   bernama `deploy\Caddyfile` — satu berkas dengan backslash di namanya,
+   bukan direktori `deploy/`. Akibatnya `install.sh` gagal di langkah 5
+   (`cannot stat .../deploy/affiliate-studio.service`) dan seluruh berkas
+   `deploy/` serta `assets/` mendarat di akar sebagai nama aneh.
+   Perbaikan: `p.relative_to(ROOT).as_posix()`.
+2. **Email ACME placeholder ditolak.** `admin@example.com` membuat Let's
+   Encrypt menjawab `invalidContact :: contact email has forbidden domain
+   "example.com"`. Caddy lalu beralih ke ZeroSSL dan tetap berhasil, tapi
+   log jadi berisik. Perbaikan: email dikosongkan — sertifikat tetap terbit.
 
 ## Kalau sertifikat gagal
 

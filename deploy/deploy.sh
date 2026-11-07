@@ -37,11 +37,12 @@ echo "== 2/4 membuat bundel"
 python scripts/paket_deploy.py
 
 echo "== 3/4 mengirim ke VPS"
-scp -q _deploy/affiliate-studio.tar.gz deploy/install.sh "$TARGET:/root/"
+# /tmp, bukan /root — user biasa (mis. 'ubuntu') tidak boleh menulis ke /root.
+scp -q _deploy/affiliate-studio.tar.gz deploy/install.sh "$TARGET:/tmp/"
 echo "   ok"
 
 echo "== 4/4 memasang di VPS"
-ssh "$TARGET" "SITE_ADDRESS=$SITE_ADDRESS bash /root/install.sh /root/affiliate-studio.tar.gz"
+ssh "$TARGET" "sudo bash /tmp/install.sh /tmp/affiliate-studio.tar.gz $SITE_ADDRESS"
 
 echo
 echo "Selesai. Buka: https://$SITE_ADDRESS/"
