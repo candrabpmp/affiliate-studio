@@ -24,3 +24,8 @@ Thumbs.db
 # repo publik secara default. Kalau memang mau dipublikasikan:
 #   git add -f hackathon/RIWAYAT-CHAT.md
 hackathon/RIWAYAT-CHAT.*
+
+# transcript mentah — memuat API key sungguhan 42 kali. Jangan pernah masuk
+# repo, bahkan sebagai riwayat. Untuk mengirim ke juri, pakai berkas di folder
+# ini secara langsung, atau versi REDACTED.
+hackathon/chat-history-raw/
