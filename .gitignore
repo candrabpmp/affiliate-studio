@@ -19,3 +19,8 @@ hackathon/*.mp4
 __pycache__/
 .DS_Store
 Thumbs.db
+
+# riwayat percakapan lengkap — berisi seluruh diskusi internal, bukan untuk
+# repo publik secara default. Kalau memang mau dipublikasikan:
+#   git add -f hackathon/RIWAYAT-CHAT.md
+hackathon/RIWAYAT-CHAT.*
