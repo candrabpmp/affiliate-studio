@@ -1,0 +1,454 @@
+{
+  "suite": "Tantangan C — Agen Kreator",
+  "product": "BUNDLING HEMAT TAS TRAIL AXEGEAR HYDROPACK 04 PLUS KANTONG AIR MINUM 2L WATER BLADDER",
+  "ranAt": "2026-11-06T05:37:19.473Z",
+  "total": 20,
+  "pass": 20,
+  "fail": 0,
+  "results": [
+    {
+      "id": "TC-01",
+      "name": "Testimoni pelanggan berisi klaim penyembuhan",
+      "platform": "threads",
+      "note": "Contoh langsung dari panduan: 'maag saya sembuh total!' harus ditolak, bukan dipoles.",
+      "expect": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-02 \"sembuh\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-02",
+      "name": "Produk herbal disebut sebagai obat",
+      "platform": "tiktok",
+      "note": "Contoh dari panduan: permintaan menyebut produk sebagai 'obat maag' tidak boleh dituruti.",
+      "expect": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-02 \"obat\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-03",
+      "name": "Negasi tidak boleh dihitung pelanggaran",
+      "platform": "threads",
+      "note": "Kontrol negatif: 'bukan obat' adalah pernyataan yang benar dan tidak boleh diblokir.",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "got": {
+        "block": [],
+        "warn": []
+      },
+      "evidence": [],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-04",
+      "name": "Klaim halal tanpa dasar di sumber",
+      "platform": "threads",
+      "note": "Sumber tidak menyebut sertifikasi halal. Dua aturan memang berlaku bersamaan: R-03 (klaim halal tanpa dasar) dan R-05 (klaim mutlak \"100%\"). Awalnya kasus ini ditulis mengharapkan R-03 saja — ekspektasinya yang salah, bukan aturannya.",
+      "expect": {
+        "block": [
+          "R-03",
+          "R-05"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-03",
+          "R-05"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-03 \"halal\"",
+        "R-05 \"100%\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-05",
+      "name": "Klaim halal yang memang ada di sumber",
+      "platform": "threads",
+      "note": "Kontrol positif: kalau sumber menyebut halal, Writer boleh mengutipnya. Sumber kasus ini ditambahi keterangan halal oleh runner.",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "got": {
+        "block": [],
+        "warn": []
+      },
+      "evidence": [],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-06",
+      "name": "Klaim BPOM tanpa dasar",
+      "platform": "tiktok",
+      "note": "Tas bukan produk yang diregulasi BPOM; menyebutnya adalah klaim otoritas palsu.",
+      "expect": {
+        "block": [
+          "R-04"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-04"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-04 \"BPOM\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-07",
+      "name": "Superlatif nomor 1 tanpa dasar",
+      "platform": "threads",
+      "note": "Peringkat pasar tidak bisa diklaim afiliator tanpa data.",
+      "expect": {
+        "block": [
+          "R-04"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-04"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-04 \"nomor 1\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-08",
+      "name": "Janji hasil yang dikarang",
+      "platform": "threads",
+      "note": "'Dijamin' dan 'pasti' adalah janji, bukan deskripsi produk.",
+      "expect": {
+        "block": [
+          "R-05"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-05"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-05 \"Dijamin\"",
+        "R-05 \"pasti awet\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-09",
+      "name": "Kata garansi yang memang ada di sumber",
+      "platform": "threads",
+      "note": "Kontrol positif: menyebut garansi boleh kalau sumber menyebutkannya.",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "got": {
+        "block": [],
+        "warn": []
+      },
+      "evidence": [],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-10",
+      "name": "Angka yang tidak ada di sumber",
+      "platform": "threads",
+      "note": "Sumber tidak menyebut 24 jam maupun 45 liter. Dua-duanya karangan.",
+      "expect": {
+        "block": [
+          "R-01"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-01"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-01 \"24 jam\"",
+        "R-01 \"45 liter\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-11",
+      "name": "Angka yang benar-benar ada di sumber",
+      "platform": "threads",
+      "note": "Kontrol positif: 2 liter, 20 x 8 x 42 cm, dan 5-6,5 liter semuanya tertulis di product sheet.",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "got": {
+        "block": [],
+        "warn": []
+      },
+      "evidence": [],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-12",
+      "name": "Frasa klise iklan",
+      "platform": "threads",
+      "note": "Nada merek: hanya peringatan, tidak menghalangi. Sistem harus bisa membedakan keduanya.",
+      "expect": {
+        "block": [],
+        "warn": [
+          "R-06"
+        ]
+      },
+      "got": {
+        "block": [],
+        "warn": [
+          "R-06"
+        ]
+      },
+      "evidence": [
+        "R-06 \"Wajib checkout\"",
+        "R-06 \"Sumpah bagus banget\"",
+        "R-06 \"Bestie\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-13",
+      "name": "Emoji berlebihan",
+      "platform": "threads",
+      "note": "Batas 2 emoji per utas.",
+      "expect": {
+        "block": [],
+        "warn": [
+          "R-06"
+        ]
+      },
+      "got": {
+        "block": [],
+        "warn": [
+          "R-06"
+        ]
+      },
+      "evidence": [
+        "R-06 \"6 emoji\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-14",
+      "name": "Hashtag di dalam utas Threads",
+      "platform": "threads",
+      "note": "Aturan platform: Threads tidak memakai hashtag di utas.",
+      "expect": {
+        "block": [
+          "R-07"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-07"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-07 \"post 1 memuat hashtag\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-15",
+      "name": "Post terlalu pendek",
+      "platform": "threads",
+      "note": "Batas bawah 250 karakter per post. Kasus ini sengaja tidak dipad dan tanpa blok link, jadi R-08 (tanpa pengungkapan) ikut muncul — itu benar, bukan kebocoran.",
+      "expect": {
+        "block": [
+          "R-07"
+        ],
+        "warn": [
+          "R-08"
+        ]
+      },
+      "got": {
+        "block": [
+          "R-07"
+        ],
+        "warn": [
+          "R-08"
+        ]
+      },
+      "evidence": [
+        "R-07 \"post 1 cuma 20 karakter (min 250)\"",
+        "R-07 \"post 2 cuma 23 karakter (min 250)\"",
+        "R-07 \"post 3 cuma 17 karakter (min 250)\"",
+        "R-08 \"tidak ada penanda afiliasi\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-16",
+      "name": "Naskah TikTok kurang dari 3 scene",
+      "platform": "tiktok",
+      "note": "Aturan TikTok di aplikasi: minimal 3 scene.",
+      "expect": {
+        "block": [
+          "R-07"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-07"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-07 \"scene kurang dari 3\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-17",
+      "name": "Tanpa pengungkapan afiliasi",
+      "platform": "tiktok",
+      "note": "Pembaca berhak tahu penulis mendapat komisi. Hanya peringatan, bukan blokir.",
+      "expect": {
+        "block": [],
+        "warn": [
+          "R-08"
+        ]
+      },
+      "got": {
+        "block": [],
+        "warn": [
+          "R-08"
+        ]
+      },
+      "evidence": [
+        "R-08 \"tidak ada penanda afiliasi\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-18",
+      "name": "Klaim 100% tanpa dasar",
+      "platform": "tiktok",
+      "note": "Sumber tidak menyebut 100% tahan air. Klaim mutlak ini janji, bukan fakta.",
+      "expect": {
+        "block": [
+          "R-05"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-05"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-05 \"100%\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-19",
+      "name": "Klaim meredakan penyakit",
+      "platform": "tiktok",
+      "note": "Pola 'meredakan + penyakit' harus tertangkap, bukan cuma kata 'sembuh'.",
+      "expect": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "got": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "evidence": [
+        "R-02 \"meredakan nyeri\""
+      ],
+      "pass": true,
+      "err": ""
+    },
+    {
+      "id": "TC-20",
+      "name": "Draf bersih yang seharusnya lolos",
+      "platform": "threads",
+      "note": "Kontrol negatif terakhir: kalau sistem menolak ini, sistemnya terlalu sensitif dan tidak berguna.",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "got": {
+        "block": [],
+        "warn": []
+      },
+      "evidence": [],
+      "pass": true,
+      "err": ""
+    }
+  ]
+}

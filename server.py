@@ -1,0 +1,685 @@
+#!/usr/bin/env python3
+"""Server lokal Affiliate Studio — menyimpan data ke SQLite, bukan ke browser.
+
+Kenapa ini ada
+--------------
+localStorage terikat pada satu browser + satu origin. Buka di browser lain,
+atau lewat port lain, datanya tidak ada. Server ini menyimpan state ke satu
+file SQLite di folder data/, jadi semua browser di mesin ini membaca sumber
+yang sama.
+
+Cara pakai
+----------
+    python server.py
+    buka http://127.0.0.1:8787/
+
+Tanpa argumen lain. Hanya mendengarkan di 127.0.0.1 (tidak terekspos ke
+jaringan). Tidak butuh paket tambahan — hanya modul bawaan Python.
+
+API
+---
+GET  /api/state            -> { rev, updatedAt, bytes, state }
+GET  /api/state?rev=N      -> snapshot revisi tertentu
+PUT  /api/state            -> body {"state": {...}} ; simpan + snapshot
+GET  /api/history?limit=20 -> daftar snapshot (tanpa isi)
+GET  /api/health           -> { ok, db, rev }
+POST /api/extract          -> mulai ekstraksi detail (proses terpisah)
+GET  /api/extract          -> status/progres ekstraksi
+"""
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import threading
+import time
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+ROOT = Path(__file__).resolve().parent
+# AFFILIATE_DB bisa menunjuk file lain — dipakai untuk uji coba supaya database
+# asli tidak pernah tersentuh.
+DB_PATH = Path(os.environ.get("AFFILIATE_DB") or (ROOT / "data" / "affiliate.db"))
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("AFFILIATE_PORT", "8787"))
+
+# Video hasil generator (Veo/Gemini/Kling) TIDAK disimpan di SQLite. Database-nya
+# cuma satu baris JSON state yang ditulis ulang tiap perubahan — menaruh file
+# 5 MB di dalamnya berarti menyalin 5 MB setiap kali user mengetik. Jadi file
+# ditaruh di disk (data/video/<key produk>/<timestamp>.mp4) dan state hanya
+# menyimpan nama file + metadata.
+# VIDEO_DIR bisa diarahkan lewat env supaya uji coba tidak mengotori data asli.
+VIDEO_DIR = Path(os.environ.get("AFFILIATE_VIDEO_DIR") or (ROOT / "data" / "video"))
+VIDEO_EXTS = {".mp4", ".mov", ".webm", ".m4v"}
+VIDEO_MAX = 200 * 1024 * 1024          # 200 MB per file
+
+# berapa snapshot yang disimpan sebagai jaring pengaman
+MAX_SNAPSHOTS = 60
+# jarak minimum antar snapshot otomatis (detik) — supaya tidak banjir saat mengetik
+SNAPSHOT_EVERY = 120
+
+_lock = threading.Lock()
+
+
+def db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            rev INTEGER NOT NULL DEFAULT 0,
+            body TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS snapshot (
+            rev INTEGER PRIMARY KEY,
+            body TEXT NOT NULL,
+            saved_at INTEGER NOT NULL,
+            bytes INTEGER NOT NULL
+        )
+    """)
+    return conn
+
+
+def read_state(rev=None):
+    conn = db()
+    try:
+        if rev is None:
+            row = conn.execute("SELECT rev, body, updated_at FROM state WHERE id = 1").fetchone()
+            if not row:
+                return {"rev": 0, "updatedAt": None, "bytes": 0, "state": None}
+            return {"rev": row[0], "updatedAt": row[2], "bytes": len(row[1]), "state": json.loads(row[1])}
+        row = conn.execute("SELECT rev, body, saved_at FROM snapshot WHERE rev = ?", (rev,)).fetchone()
+        if not row:
+            return None
+        return {"rev": row[0], "updatedAt": row[2], "bytes": len(row[1]), "state": json.loads(row[1])}
+    finally:
+        conn.close()
+
+
+def write_state(body_text):
+    """Simpan state baru. Mengembalikan (rev, bytes, snapshot_dibuat)."""
+    conn = db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT rev, body, updated_at FROM state WHERE id = 1").fetchone()
+        rev = (row[0] if row else 0) + 1
+        now = int(time.time() * 1000)
+
+        # cadangkan isi lama sebelum ditimpa. Tiga snapshot pertama dibuat
+        # selalu (supaya ada titik pulang sejak awal), sisanya dibatasi waktu.
+        made = False
+        if row:
+            old_rev, old_body, old_at = row
+            count, last_at = conn.execute("SELECT COUNT(*), MAX(saved_at) FROM snapshot").fetchone()
+            if count < 3 or not last_at or (now - last_at) >= SNAPSHOT_EVERY * 1000:
+                conn.execute(
+                    "INSERT OR REPLACE INTO snapshot (rev, body, saved_at, bytes) VALUES (?,?,?,?)",
+                    (old_rev, old_body, old_at, len(old_body)),
+                )
+                made = True
+                conn.execute(
+                    "DELETE FROM snapshot WHERE rev NOT IN (SELECT rev FROM snapshot ORDER BY rev DESC LIMIT ?)",
+                    (MAX_SNAPSHOTS,),
+                )
+
+        conn.execute(
+            "INSERT INTO state (id, rev, body, updated_at) VALUES (1, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET rev=excluded.rev, body=excluded.body, updated_at=excluded.updated_at",
+            (rev, body_text, now),
+        )
+        conn.commit()
+        return rev, len(body_text), made
+    finally:
+        conn.close()
+
+
+def history(limit=20):
+    conn = db()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM snapshot").fetchone()[0]
+        rows = conn.execute(
+            "SELECT rev, saved_at, bytes FROM snapshot ORDER BY rev DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return total, [{"rev": r[0], "savedAt": r[1], "bytes": r[2]} for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------- ekstraksi
+# Ekstraksi detail dijalankan sebagai proses terpisah dari aplikasi web, tapi
+# dipicu dan dipantau lewat HTTP. Browser tidak bisa menjalankan proses sendiri;
+# server inilah yang bisa. Jadi tombol di UI cukup memanggil endpoint ini.
+
+_extract = {
+    "status": "idle",      # idle | running | done | error
+    "total": 0,
+    "done": 0,
+    "current": "",
+    "log": [],
+    "startedAt": None,
+    "finishedAt": None,
+    "error": "",
+    "ok": 0,
+    "failed": 0,
+}
+_extract_lock = threading.Lock()
+
+
+def punya_media(pid):
+    """True kalau folder assets/<pid>/ sudah berisi file (atau ditandai kosong)."""
+    folder = ROOT / "assets" / str(pid)
+    if not folder.is_dir():
+        return False
+    files = list(folder.iterdir())
+    if any(f.name == ".media-none" for f in files):
+        return True
+    return any(not f.name.startswith(".") for f in files)
+
+
+def pending_from_state():
+    """Produk aktif yang masih butuh detail dan/atau media, diambil dari database.
+
+    `need` membedakan dua pekerjaan supaya UI bisa menghitungnya terpisah:
+      detail -> belum punya data produk, harus scraping penuh
+      media  -> detail sudah ada, tinggal unduh gambar/video
+    """
+    conn = db()
+    try:
+        row = conn.execute("SELECT body FROM state WHERE id = 1").fetchone()
+        if not row:
+            return []
+        items = json.loads(row[0]).get("items") or []
+        out = []
+        for it in items:
+            if it.get("archived"):
+                continue
+            pid = str(it.get("productId") or "").strip()
+            if not pid:
+                continue
+            punya_detail = (it.get("detailStatus") or "") == "ok" or bool(it.get("detail"))
+            if punya_detail and punya_media(pid):
+                continue
+            out.append({
+                "id": pid,
+                "url": it.get("productUrl") or ("https://shopee.co.id/product/" + pid),
+                "need": "media" if punya_detail else "detail",
+            })
+        return out
+    finally:
+        conn.close()
+
+
+def assets_manifest():
+    """Daftar file di assets/<productId>/ — supaya UI tahu aset barunya."""
+    img = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"}
+    vid = {".mp4", ".mov", ".webm", ".m4v", ".avi"}
+    items = {}
+    base = ROOT / "assets"
+    if base.is_dir():
+        for folder in sorted(base.iterdir()):
+            if not folder.is_dir():
+                continue
+            files = []
+            for f in sorted(folder.iterdir()):
+                if not f.is_file() or f.name.startswith("."):
+                    continue
+                ext = f.suffix.lower()
+                files.append({
+                    "file": f.name,
+                    "kind": "image" if ext in img else ("video" if ext in vid else "other"),
+                    "bytes": f.stat().st_size,
+                })
+            if files:
+                items[folder.name] = files
+    return {"items": items}
+
+
+def _extract_worker(items):
+    global _extract
+    script = ROOT / "scripts" / "extract_batch.py"
+    try:
+        (ROOT / "data").mkdir(parents=True, exist_ok=True)
+        (ROOT / "data" / "pending.json").write_text(
+            json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        proc = subprocess.Popen(
+            [sys.executable, str(script)],
+            cwd=str(ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            with _extract_lock:
+                _extract["log"].append(line)
+                if len(_extract["log"]) > 400:
+                    del _extract["log"][:-400]
+                m = re.match(r"\[(\d+)/(\d+)\]\s*(.*)", line)
+                if m:
+                    _extract["done"] = max(0, int(m.group(1)) - 1)
+                    _extract["total"] = int(m.group(2))
+                    _extract["current"] = m.group(3)
+                if "-> OK" in line or "SKIP" in line:
+                    _extract["ok"] += 1
+                elif "-> GAGAL" in line:
+                    _extract["failed"] += 1
+        code = proc.wait()
+        with _extract_lock:
+            _extract["finishedAt"] = int(time.time() * 1000)
+            if code == 0:
+                _extract["status"] = "done"
+                _extract["done"] = _extract["total"]
+            else:
+                _extract["status"] = "error"
+                _extract["error"] = "skrip keluar dengan kode %d — lihat log" % code
+    except Exception as e:
+        with _extract_lock:
+            _extract["status"] = "error"
+            _extract["error"] = str(e)
+            _extract["finishedAt"] = int(time.time() * 1000)
+
+
+def start_extract():
+    """Mulai pekerjaan ekstraksi. Mengembalikan (ok, payload)."""
+    global _extract
+    items = pending_from_state()
+    with _extract_lock:
+        if _extract["status"] == "running":
+            return False, dict(_extract)
+        if not items:
+            _extract.update({
+                "status": "done", "total": 0, "done": 0, "current": "",
+                "log": ["Tidak ada produk yang perlu diekstrak."],
+                "startedAt": int(time.time() * 1000),
+                "finishedAt": int(time.time() * 1000),
+                "error": "", "ok": 0, "failed": 0,
+            })
+            return True, dict(_extract)
+        _extract.update({
+            "status": "running", "total": len(items), "done": 0, "current": "",
+            "log": ["Menyiapkan %d produk..." % len(items)],
+            "startedAt": int(time.time() * 1000), "finishedAt": None,
+            "error": "", "ok": 0, "failed": 0,
+        })
+    threading.Thread(target=_extract_worker, args=(items,), daemon=True).start()
+    return True, dict(_extract)
+
+
+# ---------------- penyimpanan video ----------------
+# Nama folder/file datang dari klien, jadi harus divalidasi: tanpa ini "../.."
+# bisa menulis ke luar data/video.
+_SAFE_KEY = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def _video_dir(key):
+    k = _SAFE_KEY.sub("_", str(key or "").strip())[:80]
+    if not k:
+        return None
+    p = (VIDEO_DIR / k).resolve()
+    try:
+        p.relative_to(VIDEO_DIR.resolve())
+    except ValueError:
+        return None
+    return p
+
+
+def _video_file(key, name):
+    d = _video_dir(key)
+    if not d:
+        return None
+    n = _SAFE_KEY.sub("_", str(name or "").strip())[:120]
+    if not n or not n.lower().endswith(tuple(VIDEO_EXTS)):
+        return None
+    p = (d / n).resolve()
+    try:
+        p.relative_to(d)
+    except ValueError:
+        return None
+    return p
+
+
+def video_list():
+    """Daftar file video yang benar-benar ada di disk, dikelompokkan per produk.
+    Dipakai UI untuk menandai video yatim (file hilang / dihapus manual)."""
+    out = {}
+    if not VIDEO_DIR.exists():
+        return out
+    for d in VIDEO_DIR.iterdir():
+        if not d.is_dir():
+            continue
+        files = []
+        for f in sorted(d.iterdir()):
+            if f.is_file() and f.suffix.lower() in VIDEO_EXTS:
+                files.append({"file": f.name, "size": f.stat().st_size,
+                              "at": int(f.stat().st_mtime * 1000)})
+        if files:
+            out[d.name] = files
+    return out
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, directory=str(ROOT), **kw)
+
+    # log ringkas, jangan spam konsol
+    def log_message(self, fmt, *args):
+        if self.path.startswith("/api/"):
+            sys.stderr.write("%s %s\n" % (self.command, self.path))
+            return
+        sys.stderr.write("%s %s\n" % (self.command, self.path))
+
+    # Hanya halaman lokal (127.0.0.1 / localhost, port apa pun) yang boleh
+    # memanggil API. Ini untuk preview panel yang jalan di port lain.
+    # Origin internet dan file:// (Origin: null) sengaja ditolak.
+    def _cors(self):
+        origin = self.headers.get("Origin")
+        if origin and re.match(r"^http://(127\.0\.0\.1|localhost)(:\d+)?$", origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Filename")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    # HTML/JS/CSS tidak boleh di-cache browser. Tanpa ini Chrome memakai
+    # heuristic caching (berdasar Last-Modified), jadi app.js lama bisa terus
+    # dipakai setelah file di disk diperbarui — UI terlihat "rusak" padahal
+    # kodenya sudah benar. Aset gambar/video tetap boleh di-cache.
+    #
+    # PENTING: "/" juga harus dihitung HTML. SimpleHTTPRequestHandler melayani
+    # index.html untuk path "/", tapi path-nya tidak berakhiran ".html", jadi
+    # dulu lolos dari aturan ini. Akibatnya index.html ter-cache, dan seluruh
+    # referensi app.js?v=... di dalamnya ikut beku — perubahan apa pun tidak
+    # pernah sampai ke browser meski file di disk sudah baru.
+    def end_headers(self):
+        path = urlparse(self.path).path.lower()
+        if path in ("", "/") or path.endswith((".html", ".htm", ".js", ".css")):
+            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
+    def _json(self, obj, code=200):
+        payload = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self._cors()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _path(self):
+        u = urlparse(self.path)
+        return u.path, parse_qs(u.query)
+
+    # ---- video: streaming dengan dukungan Range (supaya scrub di player jalan)
+    def _send_video(self, qs):
+        key = (qs.get("key", [""])[0] or "").strip()
+        name = (qs.get("file", [""])[0] or "").strip()
+        p = _video_file(key, name)
+        if not p or not p.exists() or not p.is_file():
+            return self._json({"error": "video tidak ditemukan"}, 404)
+        size = p.stat().st_size
+        start, end, code = 0, size - 1, 200
+        rng = self.headers.get("Range") or ""
+        m = re.match(r"bytes=(\d*)-(\d*)", rng.strip())
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else size - 1
+            else:                                   # bytes=-N : N byte terakhir
+                start = max(0, size - int(m.group(2)))
+            end = min(end, size - 1)
+            if start > end:
+                self.send_response(416)
+                self._cors()
+                self.send_header("Content-Range", "bytes */%d" % size)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            code = 206
+        self.send_response(code)
+        self._cors()
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        if code == 206:
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+        # video boleh di-cache browser: isinya tidak pernah berubah untuk nama
+        # file yang sama (nama memakai timestamp).
+        self.send_header("Cache-Control", "private, max-age=86400")
+        self.end_headers()
+        with p.open("rb") as f:
+            f.seek(start)
+            left = end - start + 1
+            while left > 0:
+                chunk = f.read(min(256 * 1024, left))
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return                          # user menutup player di tengah jalan
+                left -= len(chunk)
+
+    def _video_upload(self, qs):
+        key = (qs.get("key", [""])[0] or "").strip()
+        d = _video_dir(key)
+        if not d:
+            return self._json({"error": "key produk tidak valid"}, 400)
+        raw_name = self.headers.get("X-Filename") or "video.mp4"
+        try:
+            raw_name = unquote(raw_name)
+        except Exception:
+            pass
+        ext = Path(raw_name).suffix.lower()
+        if ext not in VIDEO_EXTS:
+            return self._json({"error": "format harus %s" % ", ".join(sorted(VIDEO_EXTS))}, 400)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return self._json({"error": "file kosong"}, 400)
+        if length > VIDEO_MAX:
+            return self._json({"error": "maksimal %d MB" % (VIDEO_MAX // (1024 * 1024))}, 413)
+
+        d.mkdir(parents=True, exist_ok=True)
+        name = "%d%s" % (int(time.time() * 1000), ext)
+        dest = d / name
+        tmp = d / (name + ".part")
+        written = 0
+        try:
+            with tmp.open("wb") as f:
+                while written < length:
+                    chunk = self.rfile.read(min(1024 * 1024, length - written))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    written += len(chunk)
+            if written != length:
+                tmp.unlink(missing_ok=True)
+                return self._json({"error": "upload terputus (%d dari %d byte)" % (written, length)}, 400)
+            tmp.replace(dest)
+        except Exception as e:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return self._json({"error": "gagal menyimpan: %s" % e}, 500)
+        return self._json({"ok": True, "file": name, "size": written,
+                           "dir": d.name, "original": raw_name})
+
+    def _video_delete(self, qs):
+        key = (qs.get("key", [""])[0] or "").strip()
+        name = (qs.get("file", [""])[0] or "").strip()
+        p = _video_file(key, name)
+        if not p or not p.exists():
+            return self._json({"error": "video tidak ditemukan"}, 404)
+        try:
+            p.unlink()
+        except Exception as e:
+            return self._json({"error": "gagal menghapus: %s" % e}, 500)
+        d = p.parent
+        try:
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+        except Exception:
+            pass
+        return self._json({"ok": True})
+
+    def do_GET(self):
+        path, qs = self._path()
+        if path == "/api/health":
+            return self._json({"ok": True, "db": str(DB_PATH), "rev": read_state()["rev"]})
+        if path == "/api/state":
+            rev = qs.get("rev", [None])[0]
+            if rev is not None:
+                try:
+                    got = read_state(int(rev))
+                except ValueError:
+                    return self._json({"error": "rev harus angka"}, 400)
+                if got is None:
+                    return self._json({"error": "revisi tidak ditemukan"}, 404)
+                return self._json(got)
+            return self._json(read_state())
+        if path == "/api/history":
+            try:
+                limit = int(qs.get("limit", ["20"])[0])
+            except ValueError:
+                limit = 20
+            total, items = history(max(1, min(200, limit)))
+            return self._json({"items": items, "total": total})
+        if path == "/api/extract":
+            pending = pending_from_state()               # di luar lock: ada I/O database
+            with _extract_lock:
+                job = dict(_extract)
+            job["pending"] = len(pending)
+            job["pendingDetail"] = sum(1 for p in pending if p["need"] == "detail")
+            job["pendingMedia"] = sum(1 for p in pending if p["need"] == "media")
+            return self._json(job)
+        if path == "/api/assets":
+            return self._json(assets_manifest())
+        if path == "/api/video":
+            return self._send_video(qs)
+        if path == "/api/videos":
+            return self._json({"dir": str(VIDEO_DIR), "items": video_list()})
+        if path.startswith("/api/"):
+            return self._json({"error": "endpoint tidak dikenal"}, 404)
+        return super().do_GET()
+
+    def do_PUT(self):
+        path, _ = self._path()
+        if path != "/api/state":
+            return self._json({"error": "endpoint tidak dikenal"}, 404)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > 64 * 1024 * 1024:
+                return self._json({"error": "ukuran body tidak masuk akal"}, 400)
+            raw = self.rfile.read(length)
+            obj = json.loads(raw.decode("utf-8"))
+        except Exception as e:
+            return self._json({"error": "body bukan JSON: %s" % e}, 400)
+
+        state = obj.get("state") if isinstance(obj, dict) else None
+        if not isinstance(state, dict) or not isinstance(state.get("items"), list):
+            return self._json({"error": "body harus {\"state\": {\"items\": [...]}}"}, 400)
+
+        # penulisan optimistis: klien menyebutkan revisi yang dia baca. Kalau di
+        # antaranya ada tab/proses lain yang menulis, tolak — jangan menimpa diam-diam.
+        base = obj.get("baseRev")
+
+        body_text = json.dumps(state, ensure_ascii=False)
+        with _lock:
+            cur = read_state()["rev"]
+            if isinstance(base, int) and base != cur:
+                return self._json(
+                    {"error": "konflik", "rev": cur, "baseRev": base,
+                     "message": "data sudah diubah pihak lain sejak terakhir dibaca"},
+                    409,
+                )
+            rev, size, made = write_state(body_text)
+        return self._json({"ok": True, "rev": rev, "bytes": size, "snapshot": made})
+
+    def do_POST(self):
+        path, qs = self._path()
+        if path == "/api/video":
+            return self._video_upload(qs)
+        if path == "/api/extract":
+            started, job = start_extract()
+            return self._json(job, 200 if started else 409)
+        if path == "/api/restore":
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                obj = json.loads(self.rfile.read(length).decode("utf-8"))
+                rev = int(obj.get("rev"))
+            except Exception:
+                return self._json({"error": "butuh {\"rev\": N}"}, 400)
+            got = read_state(rev)
+            if not got:
+                return self._json({"error": "revisi tidak ditemukan"}, 404)
+            with _lock:
+                new_rev, size, _ = write_state(json.dumps(got["state"], ensure_ascii=False))
+            return self._json({"ok": True, "rev": new_rev, "bytes": size})
+        return self._json({"error": "endpoint tidak dikenal"}, 404)
+
+    def do_DELETE(self):
+        path, qs = self._path()
+        if path == "/api/video":
+            return self._video_delete(qs)
+        return self._json({"error": "endpoint tidak dikenal"}, 404)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+def main():
+    if "--help" in sys.argv:
+        print(__doc__)
+        return
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not DB_PATH.exists():
+        print("Database baru dibuat:", DB_PATH)
+    else:
+        size = DB_PATH.stat().st_size
+        print("Database:", DB_PATH, "(%d KB)" % max(1, round(size / 1024)))
+        bak = DB_PATH.with_suffix(".db.bak")
+        try:
+            shutil.copy2(DB_PATH, bak)
+            print("Cadangan harian:", bak.name)
+        except Exception as e:
+            print("! gagal membuat cadangan:", e)
+
+    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    print("Affiliate Studio jalan di http://%s:%d/" % (HOST, PORT))
+    print("Buka alamat itu di browser apa pun — datanya sama. Ctrl+C untuk berhenti.")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nBerhenti.")
+        srv.server_close()
+
+
+if __name__ == "__main__":
+    main()

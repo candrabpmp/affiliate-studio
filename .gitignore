@@ -1,0 +1,21 @@
+# database berisi kunci API LLM dan data produk nyata — jangan pernah ikut commit
+data/
+*.db
+*.db-journal
+
+# memori kerja dan artefak sementara
+.workbuddy-ai/memory/
+_t_*
+*.bak-*
+*.part
+
+# video demo: 589 MB, GitHub menolak berkas > 100 MB — unggah ke Drive/YouTube
+hackathon/*.mp4
+
+# artefak WorkBuddy
+.wbapp_*.genie
+
+# sistem
+__pycache__/
+.DS_Store
+Thumbs.db

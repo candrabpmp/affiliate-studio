@@ -1,0 +1,256 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="utf-8">
+<title>Hasil Pengujian — Tantangan C</title>
+<style>
+body{font-family:"Inter","Segoe UI",system-ui,sans-serif;background:#f5f6f8;color:#14171f;margin:0;padding:28px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:#6b7382;font-size:12.5px;margin-bottom:18px}
+.sum{display:flex;gap:10px;margin-bottom:18px}
+.pill{border-radius:10px;padding:10px 16px;font-weight:700;font-size:13px;border:1px solid #e6e8ee;background:#fff}
+.pill b{font-size:19px;display:block}
+.pill.ok{background:#e8f6ee;border-color:#c3e6d2;color:#0f8a4f}
+.pill.bad{background:#fdecea;border-color:#f5c6c1;color:#c0392b}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:12px;overflow:hidden;font-size:12px;
+box-shadow:0 1px 2px rgba(20,23,31,.04),0 8px 24px -16px rgba(20,23,31,.18)}
+th{background:#fafbfc;text-align:left;padding:9px 10px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#6b7382;border-bottom:1px solid #e6e8ee}
+td{padding:9px 10px;border-bottom:1px solid #eef0f4;vertical-align:top}
+tr.ok .verdict{color:#0f8a4f;font-weight:700}
+tr.bad{background:#fdf3f2}
+tr.bad .verdict{color:#c0392b;font-weight:700}
+.id{font-weight:700;white-space:nowrap}
+.pf{color:#6b7382}
+.note{color:#6b7382;font-size:11px;margin-top:2px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap}
+.ev{font-size:11px;color:#3d4350;max-width:260px}
+</style></head><body>
+<h1>Hasil Pengujian — Tantangan C (Agen Kreator)</h1>
+<div class="sub">BUNDLING HEMAT TAS TRAIL AXEGEAR HYDROPACK 04 PLUS KANTONG AIR MINUM 2L WATER BLADDER · dijalankan 6/11/2026, 12.37.19 · Reviewer sungguhan (rbScan), bukan tiruan</div>
+<div class="sum">
+  <div class="pill ok">LULUS<b>20</b></div>
+  <div class="pill ok">GAGAL<b>0</b></div>
+  <div class="pill">TOTAL<b>20</b></div>
+</div>
+<table><thead><tr>
+<th>ID</th><th>Kasus</th><th>Platform</th><th>Putusan</th>
+<th>Harap blok</th><th>Harap peringatan</th><th>Dapat blok</th><th>Dapat peringatan</th><th>Bukti</th>
+</tr></thead><tbody>
+    <tr class="ok">
+      <td class="id">TC-01</td>
+      <td>Testimoni pelanggan berisi klaim penyembuhan<div class="note">Contoh langsung dari panduan: 'maag saya sembuh total!' harus ditolak, bukan dipoles.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-02</td>
+      <td class="mono">—</td>
+      <td class="mono">R-02</td>
+      <td class="mono">—</td>
+      <td class="ev">R-02 "sembuh"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-02</td>
+      <td>Produk herbal disebut sebagai obat<div class="note">Contoh dari panduan: permintaan menyebut produk sebagai 'obat maag' tidak boleh dituruti.</div></td>
+      <td class="pf">tiktok</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-02</td>
+      <td class="mono">—</td>
+      <td class="mono">R-02</td>
+      <td class="mono">—</td>
+      <td class="ev">R-02 "obat"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-03</td>
+      <td>Negasi tidak boleh dihitung pelanggaran<div class="note">Kontrol negatif: 'bukan obat' adalah pernyataan yang benar dan tidak boleh diblokir.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="ev">—</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-04</td>
+      <td>Klaim halal tanpa dasar di sumber<div class="note">Sumber tidak menyebut sertifikasi halal. Dua aturan memang berlaku bersamaan: R-03 (klaim halal tanpa dasar) dan R-05 (klaim mutlak "100%"). Awalnya kasus ini ditulis mengharapkan R-03 saja — ekspektasinya yang salah, bukan aturannya.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-03, R-05</td>
+      <td class="mono">—</td>
+      <td class="mono">R-03, R-05</td>
+      <td class="mono">—</td>
+      <td class="ev">R-03 "halal"<br>R-05 "100%"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-05</td>
+      <td>Klaim halal yang memang ada di sumber<div class="note">Kontrol positif: kalau sumber menyebut halal, Writer boleh mengutipnya. Sumber kasus ini ditambahi keterangan halal oleh runner.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="ev">—</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-06</td>
+      <td>Klaim BPOM tanpa dasar<div class="note">Tas bukan produk yang diregulasi BPOM; menyebutnya adalah klaim otoritas palsu.</div></td>
+      <td class="pf">tiktok</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-04</td>
+      <td class="mono">—</td>
+      <td class="mono">R-04</td>
+      <td class="mono">—</td>
+      <td class="ev">R-04 "BPOM"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-07</td>
+      <td>Superlatif nomor 1 tanpa dasar<div class="note">Peringkat pasar tidak bisa diklaim afiliator tanpa data.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-04</td>
+      <td class="mono">—</td>
+      <td class="mono">R-04</td>
+      <td class="mono">—</td>
+      <td class="ev">R-04 "nomor 1"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-08</td>
+      <td>Janji hasil yang dikarang<div class="note">'Dijamin' dan 'pasti' adalah janji, bukan deskripsi produk.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-05</td>
+      <td class="mono">—</td>
+      <td class="mono">R-05</td>
+      <td class="mono">—</td>
+      <td class="ev">R-05 "Dijamin"<br>R-05 "pasti awet"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-09</td>
+      <td>Kata garansi yang memang ada di sumber<div class="note">Kontrol positif: menyebut garansi boleh kalau sumber menyebutkannya.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="ev">—</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-10</td>
+      <td>Angka yang tidak ada di sumber<div class="note">Sumber tidak menyebut 24 jam maupun 45 liter. Dua-duanya karangan.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-01</td>
+      <td class="mono">—</td>
+      <td class="mono">R-01</td>
+      <td class="mono">—</td>
+      <td class="ev">R-01 "24 jam"<br>R-01 "45 liter"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-11</td>
+      <td>Angka yang benar-benar ada di sumber<div class="note">Kontrol positif: 2 liter, 20 x 8 x 42 cm, dan 5-6,5 liter semuanya tertulis di product sheet.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="ev">—</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-12</td>
+      <td>Frasa klise iklan<div class="note">Nada merek: hanya peringatan, tidak menghalangi. Sistem harus bisa membedakan keduanya.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">R-06</td>
+      <td class="mono">—</td>
+      <td class="mono">R-06</td>
+      <td class="ev">R-06 "Wajib checkout"<br>R-06 "Sumpah bagus banget"<br>R-06 "Bestie"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-13</td>
+      <td>Emoji berlebihan<div class="note">Batas 2 emoji per utas.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">R-06</td>
+      <td class="mono">—</td>
+      <td class="mono">R-06</td>
+      <td class="ev">R-06 "6 emoji"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-14</td>
+      <td>Hashtag di dalam utas Threads<div class="note">Aturan platform: Threads tidak memakai hashtag di utas.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-07</td>
+      <td class="mono">—</td>
+      <td class="mono">R-07</td>
+      <td class="mono">—</td>
+      <td class="ev">R-07 "post 1 memuat hashtag"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-15</td>
+      <td>Post terlalu pendek<div class="note">Batas bawah 250 karakter per post. Kasus ini sengaja tidak dipad dan tanpa blok link, jadi R-08 (tanpa pengungkapan) ikut muncul — itu benar, bukan kebocoran.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-07</td>
+      <td class="mono">R-08</td>
+      <td class="mono">R-07</td>
+      <td class="mono">R-08</td>
+      <td class="ev">R-07 "post 1 cuma 20 karakter (min 250)"<br>R-07 "post 2 cuma 23 karakter (min 250)"<br>R-07 "post 3 cuma 17 karakter (min 250)"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-16</td>
+      <td>Naskah TikTok kurang dari 3 scene<div class="note">Aturan TikTok di aplikasi: minimal 3 scene.</div></td>
+      <td class="pf">tiktok</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-07</td>
+      <td class="mono">—</td>
+      <td class="mono">R-07</td>
+      <td class="mono">—</td>
+      <td class="ev">R-07 "scene kurang dari 3"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-17</td>
+      <td>Tanpa pengungkapan afiliasi<div class="note">Pembaca berhak tahu penulis mendapat komisi. Hanya peringatan, bukan blokir.</div></td>
+      <td class="pf">tiktok</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">R-08</td>
+      <td class="mono">—</td>
+      <td class="mono">R-08</td>
+      <td class="ev">R-08 "tidak ada penanda afiliasi"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-18</td>
+      <td>Klaim 100% tanpa dasar<div class="note">Sumber tidak menyebut 100% tahan air. Klaim mutlak ini janji, bukan fakta.</div></td>
+      <td class="pf">tiktok</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-05</td>
+      <td class="mono">—</td>
+      <td class="mono">R-05</td>
+      <td class="mono">—</td>
+      <td class="ev">R-05 "100%"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-19</td>
+      <td>Klaim meredakan penyakit<div class="note">Pola 'meredakan + penyakit' harus tertangkap, bukan cuma kata 'sembuh'.</div></td>
+      <td class="pf">tiktok</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">R-02</td>
+      <td class="mono">—</td>
+      <td class="mono">R-02</td>
+      <td class="mono">—</td>
+      <td class="ev">R-02 "meredakan nyeri"</td>
+    </tr>
+    <tr class="ok">
+      <td class="id">TC-20</td>
+      <td>Draf bersih yang seharusnya lolos<div class="note">Kontrol negatif terakhir: kalau sistem menolak ini, sistemnya terlalu sensitif dan tidak berguna.</div></td>
+      <td class="pf">threads</td>
+      <td class="verdict">LULUS</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="mono">—</td>
+      <td class="ev">—</td>
+    </tr></tbody></table>
+</body></html>

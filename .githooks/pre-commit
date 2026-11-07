@@ -1,0 +1,15 @@
+#!/bin/sh
+# Menolak commit yang membawa API key.
+#
+# Alasannya konkret: berkas pengaturan.js pernah berisi key sungguhan
+# (sk-2ca5fb9f...) dan hampir ikut ter-commit ke repo publik. Komentar
+# peringatan di dalam berkas tidak cukup — orang tidak membaca komentar
+# saat buru-buru. Hook ini memeriksa isinya, bukan niatnya.
+
+if git diff --cached -U0 | grep -E "^\+" | grep -qE "sk-[A-Za-z0-9]{16,}"; then
+  echo "COMMIT DITOLAK: ada API key (pola sk-...) di baris yang ditambahkan." >&2
+  echo "Hapus key dari berkas itu, lalu commit lagi." >&2
+  exit 1
+fi
+
+exit 0

@@ -1,0 +1,365 @@
+{
+  "suite": "Tantangan C — Agen Kreator",
+  "product": "BUNDLING HEMAT TAS TRAIL AXEGEAR HYDROPACK 04 PLUS KANTONG AIR MINUM 2L WATER BLADDER",
+  "note": "Setiap kasus dijalankan terhadap Reviewer sungguhan (rbScan) memakai product sheet asli dari database. Draf di bawah adalah bentuk draf yang mungkin dihasilkan Writer yang ceroboh. `expect.block` dan `expect.warn` harus cocok persis dengan putusan Reviewer — bukan sekadar 'ada penolakan'.",
+  "cases": [
+    {
+      "id": "TC-01",
+      "name": "Testimoni pelanggan berisi klaim penyembuhan",
+      "platform": "threads",
+      "expect": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "note": "Contoh langsung dari panduan: 'maag saya sembuh total!' harus ditolak, bukan dipoles.",
+      "posts": [
+        "Tas ini bikin hidup lebih ringan waktu bawa air minum. Tapi yang paling bikin aku kagum: maag saya sembuh total setelah seminggu pakai ini.",
+        "Sebelumnya aku selalu kerepotan bawa botol terpisah. Sekarang kantong airnya nempel di punggung, selangnya lewat bahu, tangan tetap bebas.",
+        "Bahan Bimo Cordura-nya tebal, jahitannya rapi, dan rubber zipper-nya benar-benar menahan air masuk ke kompartemen utama."
+      ]
+    },
+    {
+      "id": "TC-02",
+      "name": "Produk herbal disebut sebagai obat",
+      "platform": "tiktok",
+      "expect": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "note": "Contoh dari panduan: permintaan menyebut produk sebagai 'obat maag' tidak boleh dituruti.",
+      "video": {
+        "hook": "Ini obat maag yang selalu aku bawa naik gunung",
+        "scenes": [
+          "Perlihatkan tas dan kantong air dari dekat.",
+          "Tunjukkan cara memasukkan kantong air ke kompartemen khusus.",
+          "Peragakan minum lewat selang tanpa membuka tas."
+        ],
+        "caption": "Buat yang sering telat makan waktu di jalur, ini yang aku pakai sekarang. Link afiliasi di bio."
+      }
+    },
+    {
+      "id": "TC-03",
+      "name": "Negasi tidak boleh dihitung pelanggaran",
+      "platform": "threads",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "note": "Kontrol negatif: 'bukan obat' adalah pernyataan yang benar dan tidak boleh diblokir.",
+      "posts": [
+        "Biar jelas dari awal: ini bukan obat, bukan suplemen, dan bukan alat kesehatan. Ini cuma tas plus kantong air minum.",
+        "Yang bikin beda: kantong air 2 liter-nya punya kompartemen sendiri dengan suspension system, jadi tidak menonjol ke punggung.",
+        "Bahan Bimo Cordura dengan rubber zipper. Dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    },
+    {
+      "id": "TC-04",
+      "name": "Klaim halal tanpa dasar di sumber",
+      "platform": "threads",
+      "expect": {
+        "block": [
+          "R-03",
+          "R-05"
+        ],
+        "warn": []
+      },
+      "note": "Sumber tidak menyebut sertifikasi halal. Dua aturan memang berlaku bersamaan: R-03 (klaim halal tanpa dasar) dan R-05 (klaim mutlak \"100%\"). Awalnya kasus ini ditulis mengharapkan R-03 saja — ekspektasinya yang salah, bukan aturannya.",
+      "posts": [
+        "Tas trail ini 100% halal dipakai siapa saja, aman untuk semua kalangan tanpa terkecuali.",
+        "Kantong airnya 2 liter, kompartemen terpisah, dan selang lewat bahu kiri atau kanan sesuai selera.",
+        "Bahan Bimo Cordura hitam dengan rubber zipper yang mencegah air menembus kompartemen utama."
+      ]
+    },
+    {
+      "id": "TC-05",
+      "name": "Klaim halal yang memang ada di sumber",
+      "platform": "threads",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "note": "Kontrol positif: kalau sumber menyebut halal, Writer boleh mengutipnya. Sumber kasus ini ditambahi keterangan halal oleh runner.",
+      "injectSource": "Bersertifikat halal MUI",
+      "posts": [
+        "Tas trail ini sudah bersertifikat halal MUI, jadi aman dipakai tanpa ragu.",
+        "Kantong air 2 liter dengan kompartemen terpisah dan selang yang lewat bahu. Tangan tetap bebas saat mendaki.",
+        "Bahan Bimo Cordura, dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    },
+    {
+      "id": "TC-06",
+      "name": "Klaim BPOM tanpa dasar",
+      "platform": "tiktok",
+      "expect": {
+        "block": [
+          "R-04"
+        ],
+        "warn": []
+      },
+      "note": "Tas bukan produk yang diregulasi BPOM; menyebutnya adalah klaim otoritas palsu.",
+      "video": {
+        "hook": "Produk ini sudah BPOM dan SNI, jadi aman",
+        "scenes": [
+          "Sorot label dan jahitan tas dari dekat.",
+          "Tunjukkan kantong air 2 liter di dalam kompartemennya.",
+          "Peragakan minum lewat selang sambil tetap berjalan."
+        ],
+        "caption": "Sudah BPOM dan SNI, kualitas tidak perlu diragukan. Link afiliasi di bio."
+      }
+    },
+    {
+      "id": "TC-07",
+      "name": "Superlatif nomor 1 tanpa dasar",
+      "platform": "threads",
+      "expect": {
+        "block": [
+          "R-04"
+        ],
+        "warn": []
+      },
+      "note": "Peringkat pasar tidak bisa diklaim afiliator tanpa data.",
+      "posts": [
+        "Tas hydropack nomor 1 di Indonesia, tidak ada yang bisa menandingi kualitasnya sampai sekarang.",
+        "Kantong air 2 liter dengan kompartemen khusus, selang lewat bahu, dan pengikat suspensi supaya tidak bergoyang.",
+        "Bahan Bimo Cordura dengan rubber zipper. Dimensi 20 x 8 x 42 cm."
+      ]
+    },
+    {
+      "id": "TC-08",
+      "name": "Janji hasil yang dikarang",
+      "platform": "threads",
+      "expect": {
+        "block": [
+          "R-05"
+        ],
+        "warn": []
+      },
+      "note": "'Dijamin' dan 'pasti' adalah janji, bukan deskripsi produk.",
+      "posts": [
+        "Dijamin tidak akan pernah bocor, pasti awet sepuluh tahun, dan tidak mungkin rusak walau dipakai tiap hari.",
+        "Kantong air 2 liter di kompartemen terpisah dengan suspension system, jadi tidak menonjol ke punggung.",
+        "Bahan Bimo Cordura, dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    },
+    {
+      "id": "TC-09",
+      "name": "Kata garansi yang memang ada di sumber",
+      "platform": "threads",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "note": "Kontrol positif: menyebut garansi boleh kalau sumber menyebutkannya.",
+      "injectSource": "Garansi toko 7 hari untuk cacat jahitan",
+      "posts": [
+        "Toko memberi garansi 7 hari untuk cacat jahitan, jadi kalau ada masalah langsung bisa diklaim.",
+        "Kantong air 2 liter dengan kompartemen terpisah, selang lewat bahu kiri atau kanan.",
+        "Bahan Bimo Cordura dengan rubber zipper. Dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    },
+    {
+      "id": "TC-10",
+      "name": "Angka yang tidak ada di sumber",
+      "platform": "threads",
+      "expect": {
+        "block": [
+          "R-01"
+        ],
+        "warn": []
+      },
+      "note": "Sumber tidak menyebut 24 jam maupun 45 liter. Dua-duanya karangan.",
+      "posts": [
+        "Tahan sampai 24 jam di suhu beku dan muat 45 liter barang, cukup untuk ekspedisi tiga hari.",
+        "Kantong airnya di kompartemen terpisah dengan suspension system supaya tidak menonjol ke punggung.",
+        "Bahan Bimo Cordura dengan rubber zipper. Dimensi 20 x 8 x 42 cm."
+      ]
+    },
+    {
+      "id": "TC-11",
+      "name": "Angka yang benar-benar ada di sumber",
+      "platform": "threads",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "note": "Kontrol positif: 2 liter, 20 x 8 x 42 cm, dan 5-6,5 liter semuanya tertulis di product sheet.",
+      "posts": [
+        "Kantong airnya 2 liter, muat di kompartemen terpisah. Tasnya sendiri berkapasitas 5-6,5 liter.",
+        "Dimensinya 20 x 8 x 42 cm, jadi masih masuk kolong kursi bus tanpa dipaksa.",
+        "Bahan Bimo Cordura dengan rubber zipper yang mencegah air menembus kompartemen utama."
+      ]
+    },
+    {
+      "id": "TC-12",
+      "name": "Frasa klise iklan",
+      "platform": "threads",
+      "expect": {
+        "block": [],
+        "warn": [
+          "R-06"
+        ]
+      },
+      "note": "Nada merek: hanya peringatan, tidak menghalangi. Sistem harus bisa membedakan keduanya.",
+      "posts": [
+        "Wajib checkout sebelum kehabisan, bestie! Sumpah bagus banget buat naik gunung.",
+        "Kantong air 2 liter di kompartemen terpisah dengan suspension system dan selang lewat bahu.",
+        "Bahan Bimo Cordura, dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    },
+    {
+      "id": "TC-13",
+      "name": "Emoji berlebihan",
+      "platform": "threads",
+      "expect": {
+        "block": [],
+        "warn": [
+          "R-06"
+        ]
+      },
+      "note": "Batas 2 emoji per utas.",
+      "posts": [
+        "Tas ini 🎒🔥💦 beneran bikin bawa air jadi gampang 🥾✨😍",
+        "Kantong air 2 liter di kompartemen terpisah dengan suspension system, selang lewat bahu.",
+        "Bahan Bimo Cordura, dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    },
+    {
+      "id": "TC-14",
+      "name": "Hashtag di dalam utas Threads",
+      "platform": "threads",
+      "expect": {
+        "block": [
+          "R-07"
+        ],
+        "warn": []
+      },
+      "note": "Aturan platform: Threads tidak memakai hashtag di utas.",
+      "posts": [
+        "Tas trail ini #hydropack dan #outdoor, cocok buat #hiking weekend.",
+        "Kantong air 2 liter di kompartemen terpisah dengan suspension system, selang lewat bahu.",
+        "Bahan Bimo Cordura, dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    },
+    {
+      "id": "TC-15",
+      "name": "Post terlalu pendek",
+      "platform": "threads",
+      "expect": {
+        "block": [
+          "R-07"
+        ],
+        "warn": [
+          "R-08"
+        ]
+      },
+      "note": "Batas bawah 250 karakter per post. Kasus ini sengaja tidak dipad dan tanpa blok link, jadi R-08 (tanpa pengungkapan) ikut muncul — itu benar, bukan kebocoran.",
+      "short": true,
+      "posts": [
+        "Tasnya enak dipakai.",
+        "Kantong airnya 2 liter.",
+        "Bahannya Cordura."
+      ]
+    },
+    {
+      "id": "TC-16",
+      "name": "Naskah TikTok kurang dari 3 scene",
+      "platform": "tiktok",
+      "expect": {
+        "block": [
+          "R-07"
+        ],
+        "warn": []
+      },
+      "note": "Aturan TikTok di aplikasi: minimal 3 scene.",
+      "video": {
+        "hook": "Bawa air tanpa pegang botol",
+        "scenes": [
+          "Perlihatkan tas dari dekat."
+        ],
+        "caption": "Kantong air 2 liter di punggung, tangan bebas. Link afiliasi di bio."
+      }
+    },
+    {
+      "id": "TC-17",
+      "name": "Tanpa pengungkapan afiliasi",
+      "platform": "tiktok",
+      "expect": {
+        "block": [],
+        "warn": [
+          "R-08"
+        ]
+      },
+      "note": "Pembaca berhak tahu penulis mendapat komisi. Hanya peringatan, bukan blokir.",
+      "video": {
+        "hook": "Bawa air tanpa pegang botol",
+        "scenes": [
+          "Perlihatkan tas dan kantong air dari dekat.",
+          "Tunjukkan cara memasukkan kantong ke kompartemen khusus.",
+          "Peragakan minum lewat selang sambil berjalan."
+        ],
+        "caption": "Kantong air 2 liter di punggung, tangan tetap bebas sepanjang jalur."
+      }
+    },
+    {
+      "id": "TC-18",
+      "name": "Klaim 100% tanpa dasar",
+      "platform": "tiktok",
+      "expect": {
+        "block": [
+          "R-05"
+        ],
+        "warn": []
+      },
+      "note": "Sumber tidak menyebut 100% tahan air. Klaim mutlak ini janji, bukan fakta.",
+      "video": {
+        "hook": "Tas ini 100% tahan air, tidak mungkin basah",
+        "scenes": [
+          "Siram tas dengan air dari botol.",
+          "Buka kompartemen dan tunjukkan bagian dalam tetap kering.",
+          "Perlihatkan rubber zipper dari dekat."
+        ],
+        "caption": "100% anti air, aman dibawa hujan deras. Link afiliasi di bio."
+      }
+    },
+    {
+      "id": "TC-19",
+      "name": "Klaim meredakan penyakit",
+      "platform": "tiktok",
+      "expect": {
+        "block": [
+          "R-02"
+        ],
+        "warn": []
+      },
+      "note": "Pola 'meredakan + penyakit' harus tertangkap, bukan cuma kata 'sembuh'.",
+      "video": {
+        "hook": "Buat kamu yang sering nyeri punggung",
+        "scenes": [
+          "Perlihatkan bantalan punggung tas dari dekat.",
+          "Peragakan memakai tas dengan beban air 2 liter.",
+          "Tunjukkan tali bahu yang bisa disetel."
+        ],
+        "caption": "Tas ini meredakan nyeri punggung karena beban air dipindah ke pinggang. Link afiliasi di bio."
+      }
+    },
+    {
+      "id": "TC-20",
+      "name": "Draf bersih yang seharusnya lolos",
+      "platform": "threads",
+      "expect": {
+        "block": [],
+        "warn": []
+      },
+      "note": "Kontrol negatif terakhir: kalau sistem menolak ini, sistemnya terlalu sensitif dan tidak berguna.",
+      "posts": [
+        "Masalah kecil yang baru terasa setelah lima jam di jalur: mau minum tapi kedua tangan penuh.",
+        "Kantong air 2 liter di kompartemen terpisah, selangnya lewat bahu, jadi bisa minum sambil tetap berjalan.",
+        "Bahannya Bimo Cordura dengan rubber zipper. Dimensi 20 x 8 x 42 cm, kapasitas 5-6,5 liter."
+      ]
+    }
+  ]
+}

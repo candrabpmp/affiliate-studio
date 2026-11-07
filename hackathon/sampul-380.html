@@ -1,0 +1,111 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+/* Kanvas 1140x648 = 3x dari 380x216. Skala 1/3 menghasilkan 380x216 PERSIS,
+   tanpa sisa piksel. Varian: ?v=1|2|3 , ukuran: ?w=<lebar> */
+html,body{margin:0;padding:0;background:#f5f6f8;overflow:hidden}
+body{font-family:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;color:#14171f;
+  -webkit-font-smoothing:antialiased}
+#stage{position:relative;width:1140px;height:648px;overflow:hidden;background:#f5f6f8}
+
+/* Latar: lebar 1100 (tinggi 733) supaya watermark di pojok kanan bawah
+   jatuh DI BAWAH kanvas. Digeser ke kanan 200 agar figur tidak menabrak teks. */
+.bg{position:absolute;left:200px;top:0;width:1100px;height:auto;display:block}
+.wash{position:absolute;inset:0;background:rgba(245,246,248,.08)}
+.scrim{position:absolute;inset:0;background:linear-gradient(90deg,
+  #f5f6f8 0%, #f5f6f8 17%, rgba(245,246,248,.96) 26%,
+  rgba(245,246,248,.55) 35%, rgba(245,246,248,.10) 43%, rgba(245,246,248,0) 48%)}
+.vign{position:absolute;inset:0;box-shadow:inset 0 0 140px rgba(20,23,31,.09)}
+
+.bar{position:absolute;left:0;top:0;width:1140px;height:6px;z-index:6;
+  background:linear-gradient(90deg,#2563eb 0%,#2563eb 28%,#ee4d2d 46%,#a8630a 70%,#0f8a4f 100%)}
+
+.wrap{position:absolute;left:56px;top:0;height:648px;width:500px;z-index:5;
+  display:flex;flex-direction:column;justify-content:center;padding-bottom:6px;box-sizing:border-box}
+
+.k{font-size:16px;font-weight:700;letter-spacing:.17em;color:#6b7382;text-transform:uppercase}
+h1{font-size:86px;line-height:.95;margin:20px 0 0;font-weight:800;letter-spacing:-3px}
+h1 .b{display:block;color:#14171f}
+h1 .o{display:block;color:#ee4d2d}
+.sub{font-size:23px;line-height:1.38;color:#3d4350;margin-top:22px;max-width:460px;
+  font-weight:450;letter-spacing:-.1px}
+.sub b{font-weight:700;color:#14171f}
+
+/* ---------- varian gelap ---------- */
+body.dark{background:#0e1420}
+.dark #stage{background:#0e1420}
+.dark .wash{background:transparent}
+.dark .scrim{background:linear-gradient(90deg,
+  #0e1420 0%, #0e1420 15%, rgba(14,20,32,.97) 24%,
+  rgba(14,20,32,.55) 33%, rgba(14,20,32,.10) 41%, rgba(14,20,32,0) 47%)}
+.dark .vign{box-shadow:inset 0 0 180px rgba(0,0,0,.55)}
+.dark .k{color:#8892a4}
+.dark h1 .b{color:#f4f6fa}
+.dark h1 .o{color:#ff6b4a}
+.dark .sub{color:#b8c2d2}
+.dark .sub b{color:#f4f6fa}
+</style></head><body>
+<div id="stage">
+  <img class="bg" id="bg" src="sampul-latar-ai.png" alt="">
+  <div class="wash"></div>
+  <div class="scrim"></div>
+  <div class="vign"></div>
+  <div class="bar"></div>
+
+  <div class="wrap">
+    <div class="k" id="k1"></div>
+    <h1><span class="b">Affiliate</span><span class="o">Studio</span></h1>
+    <div class="sub" id="sub"></div>
+  </div>
+</div>
+<script>
+/* Pada 380x216 hanya judul dan satu-dua baris tagline yang masih terbaca.
+   Chip, footer, dan angka pengujian sengaja dibuang — di ukuran ini mereka
+   cuma jadi bercak. */
+var VARIAN = {
+  1: {
+    dark: true,
+    bg: 'sampul-latar-ai-gelap.png',
+    bgLeft: 200,
+    k1: 'Tantangan C · Agen Kreator',
+    sub: 'Tiga agent menulis konten, <b>menolak klaim yang melanggar</b>, manusia memutuskan.'
+  },
+  2: {
+    dark: false,
+    bg: 'sampul-latar-ai-iso.png',
+    bgLeft: 190,
+    k1: 'Tantangan C · Agen Kreator',
+    sub: 'Tiga agent menulis konten, <b>menolak klaim yang melanggar</b>, manusia memutuskan.'
+  },
+  3: {
+    dark: false,
+    bg: 'sampul-latar-ai.png',
+    bgLeft: 200,
+    k1: 'Alat konten afiliasi mandiri',
+    sub: 'Tiga agent menulis konten, <b>menolak klaim yang melanggar</b>, manusia memutuskan.'
+  }
+};
+
+(function () {
+  var q = location.search;
+  var v = parseInt((q.match(/[?&]v=(\d+)/) || [])[1], 10) || 3;
+  var cfg = VARIAN[v] || VARIAN[3];
+
+  if (cfg.dark) document.body.classList.add('dark');
+
+  var bg = document.getElementById('bg');
+  bg.src = cfg.bg;
+  bg.style.left = cfg.bgLeft + 'px';
+  document.getElementById('k1').textContent = cfg.k1;
+  document.getElementById('sub').innerHTML = cfg.sub;
+
+  /* 1140 -> 380 tepat 1/3, jadi 380x216 keluar tanpa sisa piksel */
+  var w = parseInt((q.match(/[?&]w=(\d+)/) || [])[1], 10);
+  if (w && w !== 1140) {
+    var s = w / 1140, st = document.getElementById('stage');
+    st.style.transformOrigin = 'top left';
+    st.style.transform = 'scale(' + s + ')';
+    document.documentElement.style.width = w + 'px';
+    document.documentElement.style.height = Math.round(648 * s) + 'px';
+  }
+})();
+</script>
+</body></html>
