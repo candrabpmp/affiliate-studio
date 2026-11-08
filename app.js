@@ -5003,21 +5003,21 @@ function llmLokalCard() {
       <div class="row mb14">
         <label class="chk"><input type="checkbox" ${on ? 'checked' : ''} data-act="ls-llm-toggle"> Pakai LLM di komputer ini</label>
       </div>
-      <div class="grid-2">
-        <div class="field">
-          <div class="field-label"><span>Base URL</span></div>
-          <input class="input" data-ls="baseUrl" value="${esc(base)}"${on ? '' : ' disabled'}>
-        </div>
-        <div class="field">
-          <div class="field-label"><span>Model</span></div>
-          <input class="input" data-ls="model" value="${esc(model)}"${on ? '' : ' disabled'}>
-        </div>
+      <div class="field">
+        <div class="field-label"><span>Base URL</span></div>
+        <input class="input" data-ls="baseUrl" value="${esc(base)}"${on ? '' : ' disabled'}>
       </div>
       <div class="field mt14">
         <div class="field-label"><span>API key</span></div>
         <input class="input" type="password" data-ls="key" value="${esc(j.key || '')}" placeholder="key gateway lokal" autocomplete="off"${on ? '' : ' disabled'}>
       </div>
+      <div class="field mt14">
+        <div class="field-label"><span>Model</span></div>
+        <input class="input" data-ls="model" value="${esc(model)}" list="ls-model-list" autocomplete="off"${on ? '' : ' disabled'}>
+        <datalist id="ls-model-list"></datalist>
+      </div>
       <div class="row mt14">
+        <button class="btn btn-sm" data-act="ls-fetch-models"${on ? '' : ' disabled'}>Ambil daftar model</button>
         <button class="btn btn-sm" data-act="ls-llm-test"${on ? '' : ' disabled'}>Tes koneksi</button>
         <button class="btn btn-sm" data-act="ls-llm-clear"${on ? '' : ' disabled'}>Hapus setelan lokal</button>
         <span class="tiny muted" data-lstest></span>
@@ -5059,9 +5059,28 @@ async function testLlmLokal() {
   }
 }
 
-/* Muncul hanya kalau tidak ada LLM sama sekali: server tidak punya, browser
-   juga belum. Pengunjung VPS tidak akan pernah melihatnya karena di sana
-   mode server sudah aktif. */
+/* Ambil daftar model untuk kartu Pengaturan. Membaca setelan yang sudah
+   tersimpan di localStorage, karena field-nya menulis ke sana saat diketik. */
+async function fetchLsModels(btn) {
+  const j = lsLlmGet() || {};
+  const box = document.querySelector('[data-lstest]');
+  if (btn) btn.disabled = true;
+  if (box) box.textContent = 'mengambil daftar model…';
+  const r = await fetchModels(j.baseUrl, j.key);
+  if (btn) btn.disabled = false;
+  if (!r.ok) { if (box) box.textContent = r.message; return; }
+  fillModelList(r.models, 'ls-model-list');
+  const inp = document.querySelector('[data-ls="model"]');
+  if (inp && !String(inp.value || '').trim()) {
+    inp.value = r.models[0];
+    j.model = r.models[0];
+    lsLlmSet(j);
+  }
+  if (box) box.textContent = r.models.length + ' model ditemukan — pilih di kolom Model.';
+}
+
+/* Popup penyiapan: muncul untuk setiap pengunjung yang browser-nya belum
+   punya setelan LLM, dan database juga tidak menyimpan kunci. */
 /* Menguji endpoint OpenAI-compatible sebelum disimpan. Sengaja tidak menyimpan
    konfigurasi yang belum terbukti bisa dipanggil: lebih baik gagal di sini
    dengan pesan jelas daripada gagal di tengah pipeline 3 agen. */
@@ -5099,20 +5118,104 @@ async function probeLlm(baseUrl, key, model) {
   }
 }
 
+/* Mengambil daftar model dari penyedia (GET {base}/models — bentuk OpenAI).
+   Toleran terhadap beberapa bentuk balasan karena tidak semua proxy sama. */
+async function fetchModels(baseUrl, key) {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!base) return { ok: false, message: 'Isi Base URL dulu.' };
+  if (location.protocol === 'https:' && /^http:\/\//i.test(base)) {
+    return { ok: false, message: 'Halaman ini HTTPS, jadi endpoint http:// diblokir browser.' };
+  }
+  try {
+    const r = await fetch(base + '/models', {
+      headers: key ? { Authorization: 'Bearer ' + key } : {},
+      cache: 'no-store'
+    });
+    if (r.status === 401 || r.status === 403) return { ok: false, message: 'Key ditolak saat mengambil daftar model (HTTP ' + r.status + ').' };
+    if (!r.ok) return { ok: false, message: 'Daftar model tidak bisa diambil (HTTP ' + r.status + '). Isi nama model manual.' };
+    const d = await r.json();
+    const arr = Array.isArray(d) ? d
+      : (Array.isArray(d.data) ? d.data
+        : (Array.isArray(d.models) ? d.models : []));
+    const ids = arr
+      .map((m) => (typeof m === 'string' ? m : (m && (m.id || m.name || m.model)) || ''))
+      .filter(Boolean);
+    if (!ids.length) return { ok: false, message: 'Endpoint menjawab, tapi daftar modelnya kosong. Isi manual.' };
+    return { ok: true, models: ids.sort() };
+  } catch (e) {
+    return { ok: false, message: 'Tidak bisa mengambil daftar model (CORS atau alamat salah). Isi nama model manual.' };
+  }
+}
+
+function fillModelList(ids, listId) {
+  const dl = document.getElementById(listId || 'setup-model-list');
+  if (!dl) return;
+  dl.innerHTML = ids.map((m) => `<option value="${esc(m)}"></option>`).join('');
+}
+
+/* Daftar model bisa berisi ratusan nama (OpenRouter: 460). Mengambil yang
+   pertama menurut abjad akan memilih model acak, jadi utamakan yang lazim. */
+function pickModel(ids) {
+  const PREFER = ['gpt-4o-mini', 'gpt-4.1-mini', 'gemini-2.5-flash', 'deepseek-chat', 'llama-3.3-70b-versatile', 'gpt-4o'];
+  for (const p of PREFER) {
+    const exact = ids.find((m) => m === p);
+    if (exact) return exact;
+  }
+  for (const p of PREFER) {
+    const suff = ids.find((m) => m.endsWith('/' + p));
+    if (suff) return suff;
+  }
+  return ids[0];
+}
+
+async function fetchModelsToUi(btn) {
+  const msg = document.querySelector('[data-setup-msg]');
+  const base = (document.getElementById('setup-base') || {}).value || '';
+  const keyEl = document.getElementById('setup-key');
+  const key = keyEl ? keyEl.value.trim() : '';
+  const inp = document.getElementById('setup-model');
+  if (btn) btn.disabled = true;
+  if (msg) msg.textContent = 'mengambil daftar model…';
+  const r = await fetchModels(base, key);
+  if (btn) btn.disabled = false;
+  if (!r.ok) { if (msg) msg.textContent = r.message; return; }
+  fillModelList(r.models);
+  if (inp && !inp.value.trim()) inp.value = pickModel(r.models);
+  if (msg) msg.textContent = r.models.length + ' model ditemukan — pilih di kolom Model.';
+}
+
 async function saveLlmSetup(btn) {
   const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   const msg = document.querySelector('[data-setup-msg]');
   const provider = (document.getElementById('setup-provider') || {}).value || 'openai';
   const baseUrl = val('setup-base');
   const key = val('setup-key');
-  const model = val('setup-model');
+  let model = val('setup-model');
 
   if (!baseUrl) { if (msg) msg.textContent = 'Base URL wajib diisi.'; return; }
-  if (!model) { if (msg) msg.textContent = 'Nama model wajib diisi.'; return; }
   if (!key && provider !== 'custom') { if (msg) msg.textContent = 'API key wajib diisi untuk penyedia publik.'; return; }
 
   if (btn) btn.disabled = true;
-  if (msg) msg.textContent = 'menguji koneksi…';
+
+  /* Model kosong: ambil dari penyedia, pakai yang pertama. Lebih baik daripada
+     menolak dan menyuruh orang menebak nama model. */
+  if (!model) {
+    if (msg) msg.textContent = 'mengambil daftar model…';
+    const fm = await fetchModels(baseUrl, key);
+    if (fm.ok && fm.models.length) {
+      model = pickModel(fm.models);
+      fillModelList(fm.models);
+      const inp = document.getElementById('setup-model');
+      if (inp) inp.value = model;
+    }
+  }
+  if (!model) {
+    if (btn) btn.disabled = false;
+    if (msg) msg.textContent = 'Nama model wajib diisi — daftar model tidak bisa diambil otomatis.';
+    return;
+  }
+
+  if (msg) msg.textContent = 'menguji koneksi ke ' + model + '…';
   const r = await probeLlm(baseUrl, key, model);
   if (btn) btn.disabled = false;
   if (!r.ok) { if (msg) msg.textContent = r.message; return; }
@@ -5151,13 +5254,18 @@ function openLlmSetup() {
       </div>
 
       <div class="field mt14">
-        <div class="field-label"><span>Model</span></div>
-        <input class="input" id="setup-model" value="${esc(p.models[0])}" placeholder="gpt-4o-mini">
+        <div class="field-label"><span>API key</span></div>
+        <input class="input" type="password" id="setup-key" placeholder="sk-…" autocomplete="off">
       </div>
 
       <div class="field mt14">
-        <div class="field-label"><span>API key</span></div>
-        <input class="input" type="password" id="setup-key" placeholder="sk-…" autocomplete="off">
+        <div class="field-label"><span>Model</span></div>
+        <input class="input" id="setup-model" value="${esc(p.models[0])}" list="setup-model-list" placeholder="gpt-4o-mini" autocomplete="off">
+        <datalist id="setup-model-list"></datalist>
+        <div class="row mt14">
+          <button class="btn btn-sm" type="button" data-act="llm-fetch-models">Ambil daftar model</button>
+          <span class="tiny muted">memakai Base URL dan key di atas</span>
+        </div>
       </div>
 
       <div class="hint mt14">
@@ -5716,6 +5824,8 @@ const ACTIONS = {
 
   'ls-llm-test'() { testLlmLokal(); },
 
+  'ls-fetch-models'(el) { fetchLsModels(el); },
+
   'ls-llm-clear'() {
     lsLlmSet(null);
     render();
@@ -5723,6 +5833,8 @@ const ACTIONS = {
   },
 
   'llm-setup-save'(el) { saveLlmSetup(el); },
+
+  'llm-fetch-models'(el) { fetchModelsToUi(el); },
 
   'llm-setup-skip'() {
     try { sessionStorage.setItem(LS_SKIP, '1'); } catch (e) { /* abaikan */ }
