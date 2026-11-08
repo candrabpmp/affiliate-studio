@@ -9,7 +9,13 @@
    ============================================================ */
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
+
+/* Dua paket bisa dipakai: "playwright" (lengkap) atau "playwright-core"
+   (tanpa unduhan browser). Yang kedua cukup karena skrip ini memakai Chrome
+   yang sudah terpasang lewat channel: 'chrome'. */
+let chromium;
+try { ({ chromium } = require('playwright')); }
+catch (e) { ({ chromium } = require('playwright-core')); }
 
 const ROOT = path.join(__dirname, '..');
 const SUITE = JSON.parse(fs.readFileSync(path.join(__dirname, 'testcases.json'), 'utf8'));
@@ -53,7 +59,11 @@ function buildTiktok(c) {
   page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
   page.setDefaultTimeout(30000);
 
-  await page.goto('http://127.0.0.1:8787/', { waitUntil: 'networkidle' });
+  /* 'networkidle' tidak pernah tercapai: aplikasi punya scheduler yang menulis
+     state berkala, jadi jaringan tidak pernah benar-benar diam 500 ms. Yang
+     sebenarnya dibutuhkan adalah aplikasi selesai render — dan itu dijamin
+     oleh penantian .nav-item di bawah. */
+  await page.goto('http://127.0.0.1:8787/', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.nav-item');
 
   const cases = SUITE.cases.map((c) => ({

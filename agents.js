@@ -37,6 +37,33 @@ function sourceText(item) {
   ].filter(Boolean).join('\n');
 }
 
+/* Sumber yang boleh dibaca Planner dan Writer: klaim terlarang milik penjual
+   dibuang lebih dulu. Bukan karena mereka tidak dilarang memakainya, tapi
+   karena apa pun yang mereka baca cenderung muncul lagi di brief lalu disalin
+   Writer. Kasus nyata: bullet seller "✓ Mengobati vertigo dan sakit kepala"
+   bertahan tiga iterasi sebagai "fakta yang boleh dipakai" dari Planner,
+   sekalipun bahan Writer sudah bersih — karena Planner membaca sumber utuh.
+   Reviewer TIDAK memakai ini: dia justru harus melihat klaim penjual untuk
+   menguji R-03 (halal) dan R-04 (BPOM/SNI/original). */
+function rbWriterSource(item) {
+  const tests = rbRules()
+    .filter((r) => r.kind === 'regex')      // selalu dilarang, sekalipun penjual menyebutnya
+    .reduce((a, r) => a.concat(r.patterns || []), []);
+  return String(sourceText(item))
+    .split('\n')
+    .filter((l) => !tests.some((p) => new RegExp(p, 'i').test(l)))
+    .join('\n');
+}
+
+/* dipakai Planner untuk menyaring fakta yang dia usulkan sendiri */
+function rbClaimHit(text) {
+  const t = String(text || '');
+  if (!t) return false;
+  return rbRules()
+    .filter((r) => r.kind === 'regex')
+    .some((r) => (r.patterns || []).some((p) => new RegExp(p, 'i').test(t)));
+}
+
 /* ---------- pembaca angka ----------
    Konvensi Indonesia: koma = desimal, titik = pemisah ribuan.
    "64,0RB" dan "Rp64.000" harus dianggap angka yang sama. */
@@ -230,6 +257,7 @@ async function rbReviewerLLM(pf, item, draft) {
   const sys = [
     'Kamu REVIEWER konten afiliasi. Tugasmu menilai, bukan menulis ulang.',
     'Kamu hanya boleh menilai berdasarkan aturan yang diberikan. Jangan mengarang aturan baru.',
+    'Kutipan bukti harus memuat sendiri kata, frasa, atau angka yang melanggar aturan itu. Kalimat yang cuma mirip, atau yang justru menyangkal klaim, bukan bukti.',
     'Jawab HANYA JSON, tanpa penjelasan di luar JSON.',
     '',
     'Skema:',
@@ -284,13 +312,16 @@ async function rbPlanner(pf, item) {
     'PLATFORM: ' + (pf === 'threads' ? 'Threads (utas teks 3–5 post)' : 'TikTok (naskah video pendek)'),
     '',
     'PRODUCT SHEET:',
-    sourceText(item).slice(0, 3000)
+    rbWriterSource(item).slice(0, 3000)
   ].join('\n');
   const raw = await callLLM(cfg, sys, usr, 90000);
   const o = parseJSONLoose(raw);
+  /* fakta yang mengandung klaim terlarang dibuang di sini, sebelum sempat
+     menjadi izin bagi Writer */
+  const fakta = (Array.isArray(o.fakta) ? o.fakta : []).map(String).filter((f) => !rbClaimHit(f)).slice(0, 6);
   return {
     angle: String(o.angle || '').slice(0, 160),
-    fakta: (Array.isArray(o.fakta) ? o.fakta : []).map(String).slice(0, 6),
+    fakta,
     dilarang: (Array.isArray(o.dilarang) ? o.dilarang : []).map(String).slice(0, 6),
     rencana: (Array.isArray(o.rencana) ? o.rencana : []).map(String).slice(0, 6)
   };
@@ -316,35 +347,99 @@ function rbTraceAdd(trace, role, text, extra) {
   return row;
 }
 
+/* Kata persis yang membuat aturan berpola tersentuh. Bukti dari Reviewer
+   kadang berupa satu kalimat panjang, dan Writer cenderung memperbaiki
+   kalimatnya sambil tetap memakai kata terlarangnya ("obat" → "obat herbal").
+   Jadi yang dikirim balik bukan hanya kalimatnya, tapi tokennya. */
+function rbOffendingTokens(violations) {
+  const out = [];
+  violations.forEach((v) => {
+    const rule = rbRule(v.ruleId);
+    if (!rule || !rule.patterns) return;
+    const ev = String(v.evidence || '');
+    rule.patterns.forEach((p) => {
+      const m = new RegExp(p, 'i').exec(ev);
+      if (!m) return;
+      const t = String(m[0]).trim();
+      if (t && t.length <= 40 && out.indexOf(t) < 0) out.push(t);
+    });
+  });
+  return out;
+}
+
 function rbReviseNote(violations) {
   const lines = violations.map((v) =>
     `- [${v.ruleId}] ${v.title}: "${v.evidence}" → ${v.fix}`
   );
-  return [
+  const tokens = rbOffendingTokens(violations);
+  const parts = [
     '',
     '',
     '=== REVISI WAJIB (draf sebelumnya DITOLAK Reviewer) ===',
-    ...lines,
-    '',
-    'Perbaiki tepat pada bagian yang disebut. Jangan menambah fakta baru, jangan menambah scene/post, jangan mengubah bagian yang tidak disebut.'
-  ].join('\n');
+    ...lines
+  ];
+  if (tokens.length) {
+    parts.push('', `Kata/frasa berikut harus HILANG dari seluruh draf, bukan diganti sinonim: ${tokens.map((t) => `"${t}"`).join(', ')}. Tulis ulang kalimatnya dengan menyebut merek atau pengalaman pemakaian.`);
+  }
+  parts.push('', 'Perbaiki tepat pada bagian yang disebut. Jangan menambah fakta baru, jangan menambah scene/post, jangan mengubah bagian yang tidak disebut.');
+  return parts.join('\n');
 }
 
-/* Lapis 2 (LLM) boleh menambah aturan yang lolos dari pola, tapi tidak boleh
-   mengarang bukti yang bertentangan dengan definisi aturannya sendiri.
-   Kasus nyata yang memicu ini: R-01 — "angka dan spesifikasi harus ada di
-   sumber" — dilaporkan dengan bukti "juga bisa COD." yang tidak memuat angka
-   sama sekali. Mesin aturan deterministik tidak menemukannya, dan bukti itu
-   memblokir draf selama 3 iterasi lalu memaksa eskalasi.
-   Hanya aturan numerik yang diperiksa begini: untuk aturan pola, lapis 2
-   justru berguna karena menangkap parafrase yang tidak cocok regex. */
-function rbPlausible(pf, v) {
+/* Lapis 2 (LLM) boleh menambah aturan yang lolos dari pola, tapi buktinya
+   harus lulus uji yang tertulis di aturan itu sendiri. Kalau tidak lulus,
+   bukti itu BUKAN dibuang diam-diam — ia turun jadi catatan untuk manusia.
+
+   Kenapa begini. Kasus nyata: draf obat vertigo ditolak tiga iterasi lalu
+   dieskalasi. Mesin aturan deterministik sebenarnya sudah bersih di iterasi
+   ketiga; yang menahan hanya dua temuan lapis 2 — "produk ini bisa dibilang
+   herbal dan aman" (R-02, tidak memuat satu pun kata penyakit atau kata
+   menyembuhkan) dan "hasilnya bisa bervariasi" (R-05, itu justru kalimat
+   penyangkalan, bukan janji). Reviewer LLM berganti pikiran tiap iterasi:
+   memperbaiki satu temuan hanya memunculkan temuan baru, dan pipeline tidak
+   pernah bisa konvergen.
+
+   Aturan yang tidak bisa dibuktikan terhadap teksnya sendiri tidak boleh
+   memveto draf. Yang memblokir hanya temuan yang lolos uji:
+   - numeric : kutipan memuat angka yang tidak ada di sumber
+   - regex   : kutipan cocok dengan salah satu pola aturan (dan tidak dinegasi)
+   - gated   : kutipan cocok dengan pola, dan yang diklaim tidak ada di sumber
+   kind lain (tone/format/disclosure) sudah diperiksa tuntas oleh lapis 1. */
+function rbVerifiable(pf, item, v, draftText) {
   if (!v || !v.ruleId) return false;
   const ev = String(v.evidence == null ? '' : v.evidence).trim();
   if (!ev) return false;
   const rule = rbRulesFor(pf).find((r) => r.id === v.ruleId);
-  if (rule && rule.kind === 'numeric' && !/\d/.test(ev)) return false;
-  return true;
+  if (!rule) return false;
+
+  /* Uji pertama dan paling penting: kutipannya harus benar-benar ada di draf.
+     Tanpa ini, reviewer bisa "mengutip" kalimat yang tidak pernah ditulis —
+     dan selama kalimat karangan itu cocok dengan pola aturan, ia lolos semua
+     uji berikutnya lalu memblokir draf yang sebenarnya bersih. Ini yang
+     terjadi pada naskah TikTok obat vertigo: tiga iterasi ditolak dengan bukti
+     "Mengobati vertigo dan sakit kepala" yang tidak ada di satu pun draf. */
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').toLowerCase();
+  const dNorm = norm(draftText);
+  const probe = norm(ev).slice(0, 40);
+  if (probe && dNorm.indexOf(probe) < 0) return false;
+
+  if (rule.kind === 'numeric') {
+    const src = sourceText(item).toLowerCase();
+    const nums = ev.match(/\d+(?:[.,]\d+)?/g) || [];
+    return nums.some((n) => src.indexOf(n.toLowerCase()) < 0);
+  }
+
+  if (rule.kind === 'regex' || rule.kind === 'gated') {
+    const src = sourceText(item).toLowerCase();
+    return (rule.patterns || []).some((p) => {
+      const m = new RegExp(p, 'i').exec(ev);
+      if (!m) return false;
+      if (rule.kind === 'regex' && rule.negatable && rbNegated(ev, m.index)) return false;
+      if (rule.kind === 'gated' && src.indexOf(m[0].toLowerCase()) >= 0) return false;
+      return true;
+    });
+  }
+
+  return false;
 }
 
 /* ---------- pipeline ----------
@@ -417,22 +512,24 @@ async function runAgentPipeline(pf, item, onStep) {
 
     /* gabung: kalau mesin aturan sudah menangkap sebuah aturan, bukti dari
        mesin aturan yang dipakai — LLM hanya menambah aturan yang lolos dari pola.
-       Tambahan dari LLM disaring dulu: bukti yang tidak sesuai definisi
-       aturannya sendiri dibuang, dan pembuangannya dicatat di trace. */
+       Tambahan dari LLM diuji dulu terhadap definisi aturannya. Yang lulus
+       boleh memblokir; yang tidak lulus turun jadi catatan, dan penurunannya
+       dicatat di trace supaya bisa diperiksa manusia. */
     const scanIds = new Set(scan.map((v) => v.ruleId));
     const llmExtra = [];
-    const llmDropped = [];
+    const llmNotes = [];
     llmList.forEach((v) => {
       if (scanIds.has(v.ruleId)) return;
-      if (rbPlausible(pf, v)) llmExtra.push(v); else llmDropped.push(v);
+      if (rbVerifiable(pf, item, v, draftTextOf(pf, draft))) llmExtra.push(v);
+      else llmNotes.push({ ...v, severity: 'warn', source: 'catatan lapis 2' });
     });
-    if (llmDropped.length) {
+    if (llmNotes.length) {
       rbTraceAdd(trace, 'system',
-        `Reviewer LLM melaporkan ${llmDropped.length} bukti yang tidak sesuai definisi aturannya dan dibuang: `
-        + llmDropped.map((v) => `${v.ruleId} "${v.evidence}"`).join(' · '),
-        { iter: it, dropped: llmDropped.map((v) => ({ ruleId: v.ruleId, evidence: v.evidence })) });
+        `Reviewer LLM menyebut ${llmNotes.length} hal yang tidak lolos uji definisi aturannya — dicatat, tidak membatalkan draf: `
+        + llmNotes.map((v) => `${v.ruleId} "${v.evidence}"`).join(' · '),
+        { iter: it, notes: llmNotes.map((v) => ({ ruleId: v.ruleId, evidence: v.evidence })) });
     }
-    violations = scan.concat(llmExtra);
+    violations = scan.concat(llmExtra, llmNotes);
 
     const blocked = violations.filter((v) => v.severity === 'block');
     const warned = violations.filter((v) => v.severity !== 'block');

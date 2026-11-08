@@ -1394,6 +1394,7 @@ function descBullets(item) {
     let l = raw.replace(/^[\s•*\-–—✓~=>()\[\]]+/, '').replace(/[{}]/g, '').trim();
     if (l.length < 14 || l.length > 60) return;
     if (/https?:/.test(l) || noise.test(l)) return;
+    if (claimLine(l)) return;                        // klaim terlarang tidak masuk bahan prompt
     if (/[:]/.test(l)) return;                       // baris format "Size : 31-35", "Type: ..."
     if (/sintetis|100%|original|garansi|bpom|sni/i.test(l)) return; // klaim yang tidak bisa diverifikasi
     if (/cantumkan|silahkan|harap|pastikan|ukuran kaki|proses beli|chat|note|catatan/i.test(l)) return; // instruksi ke pembeli
@@ -1438,7 +1439,10 @@ function featuresOf(item) {
   detailFacts(item).forEach(add);
   cat.features.forEach(add);
   descBullets(item).filter((l) => l.length >= 18).slice(0, 1).forEach(add);
-  return out.slice(0, 4);
+  /* "Uang kembali dan ganti rugi ongkos kirim" pernah lolos ke baris
+     "Fitur utama" lalu dipakai Writer sebagai janji — persis yang dilarang
+     R-05. Fitur yang memuat klaim terlarang dibuang di sini. */
+  return out.filter((f) => !claimLine(f)).slice(0, 4);
 }
 
 function cutText(text, max) {
@@ -4473,6 +4477,25 @@ function specLines(item) {
 
 /* kalimat asli dari deskripsi seller, dipakai supaya model punya bahan konkret
    selain klaim yang sudah disaring descBullets() */
+/* Baris deskripsi seller yang memuat klaim terlarang tidak boleh ikut ke bahan
+   prompt. Bukan karena Writer tidak diberi tahu — CLAIM_GUARD sudah melarangnya
+   — tapi karena model cenderung menyalin kalimat yang disodorkan apa adanya.
+   Kasus nyata: bullet seller "✓ Mengobati vertigo dan sakit kepala" disalin
+   bulat-bulat ke naskah TikTok tiga iterasi berturut-turut, dan tiap iterasi
+   ditolak R-02. Yang haram tidak boleh masuk dapur.
+   Pola diambil dari RULEBOOK, bukan disalin, supaya aturan tetap satu sumber. */
+function claimLine(line) {
+  const rules = (window.RULEBOOK && window.RULEBOOK.rules) || [];
+  const t = String(line || '');
+  if (!t) return false;
+  /* Hanya aturan kind "regex" — yang dilarang sekalipun penjual menyebutnya.
+     Aturan "gated" (halal, BPOM, original, garansi) boleh dikutip kalau
+     sumbernya menyebut, jadi baris seperti "legalitas: BPOM RI & halal MUI"
+     tetap berguna sebagai bahan. */
+  return rules.some((r) => r.kind === 'regex'
+    && (r.patterns || []).some((p) => new RegExp(p, 'i').test(t)));
+}
+
 function descExcerpt(item) {
   const d = item.detail || {};
   const raw = String(d.raw_description || '').replace(/\r/g, '');
@@ -4480,7 +4503,7 @@ function descExcerpt(item) {
   const noise = /https?:|chat admin|reseller|dropship|real\s?pict|follow|testimoni|no refund|klik link|cek ulasan|jangan lupa|harga boleh|semua produk|cara pembelian|proses beli|rekening|ongkir|wa\.me|whatsapp|^kami |^kita |pabrik|produksi sendiri|designer|profesional|grosir|distributor|^100%|garansi|bpom|sni|original|termurah|terlaris/i;
   const lines = raw.split('\n')
     .map((l) => l.replace(/^[\s•*\-–—✓~=>()\[\]]+/, '').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim())
-    .filter((l) => l.length >= 18 && l.length <= 140 && !noise.test(l) && /[a-zA-Z]/.test(l));
+    .filter((l) => l.length >= 18 && l.length <= 140 && !noise.test(l) && !claimLine(l) && /[a-zA-Z]/.test(l));
   if (!lines.length) return '';
   let s = '';
   for (const l of lines) {
@@ -4622,6 +4645,7 @@ const PLOT_ANGLE = {
    Writer tidak pernah diberi tahu — jadi diberi tahu di sini. */
 const CLAIM_GUARD = [
   '- Dilarang memakai kata klaim kesehatan: sembuh, menyembuhkan, mengobati, obat, ampuh, manjur, terapi, pengobatan. Kalau data produk memuat frasa itu, parafrase jadi aturan pakai: "diminum 3x2 kapsul sehari sesudah makan". Sebut produk dengan mereknya, bukan kata "obat".',
+  '- Dilarang menempelkan kata kerja klaim (mengatasi, meredakan, menghilangkan, mengurangi, mengobati, menyembuhkan) pada nama penyakit atau keluhan (vertigo, migrain, pusing, sakit kepala, asam urat, kolesterol, lambung, dan sejenisnya). Ini berlaku juga saat klaim itu dikutip dari penjual atau dilembutkan: "katanya bisa mengatasi vertigo", "banyak yang bilang ampuh untuk migrain", "dulu dipakai untuk sakit kepala" — semuanya tetap klaim. Boleh menyebut keluhan tanpa kata kerja klaim: "buat yang sering pusing di jam kerja".',
   '- Jangan menyebut garansi, jaminan uang kembali, atau ganti rugi kecuali frasa itu tertulis persis di data produk.'
 ];
 
@@ -4799,7 +4823,7 @@ function tiktokSystem() {
     'Skema: {"hook": string, "scenes": string[], "caption": string, "hashtags": string[], "coverText": string, "music": string}',
     '- hook: kalimat pembuka video, maksimal 90 karakter.',
     '- scenes: 4 sampai 6 adegan, tiap adegan satu kalimat instruksi visual yang bisa direkam.',
-    '- caption: maksimal 300 karakter, tanpa hashtag, tanpa link.',
+    '- caption: maksimal 300 karakter, tanpa hashtag, tanpa URL. Akhiri dengan penanda afiliasi singkat — tulis "link di bio · afiliasi" di kalimat terakhir.',
     '- hashtags: 4 sampai 6 tag tanpa tanda #.',
     '- coverText: maksimal 28 karakter.',
     '- music: saran jenis musik/beat.',

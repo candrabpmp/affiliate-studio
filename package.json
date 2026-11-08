@@ -1,0 +1,11 @@
+{
+  "name": "affiliate-studio",
+  "private": true,
+  "description": "Affiliate content studio — pipeline tiga agent dengan rulebook klaim",
+  "scripts": {
+    "test": "node tests/run-tests.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.65.0"
+  }
+}

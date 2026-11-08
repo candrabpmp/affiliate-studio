@@ -42,3 +42,12 @@ _deploy/
 # Dikirim lewat formulir pengumpulan, bukan lewat repo. Repo ini khusus
 # kode yang bisa dijalankan.
 hackathon/
+
+# dependensi Node (hanya dipakai suite uji) dan hasil uji yang dihasilkan ulang
+node_modules/
+package-lock.json
+tests/hasil-pengujian.html
+tests/screenshot-hasil.png
+
+# harness uji pipeline di browser (lokal, membaca kredensial dari _deploy/)
+_uji/

@@ -15,8 +15,8 @@
    ============================================================ */
 window.RULEBOOK = {
   id: 'affiliate-claims',
-  version: '1.0',
-  updated: '2026-11-06',
+  version: '1.1',
+  updated: '2026-11-08',
   scope: 'Konten afiliasi Shopee · Threads (utas teks) dan TikTok (naskah video)',
 
   basis: [
@@ -61,15 +61,22 @@ window.RULEBOOK = {
       fix: 'Ganti ke manfaat yang bisa dilihat (nyaman dipakai, ringan dibawa) atau ke pengalaman pemakaian, bukan hasil medis.',
       /* negasi di depan kata ("bukan obat", "tanpa obat") tidak dihitung pelanggaran */
       negatable: true,
+      /* Daftar penyakit di pola ketujuh dulu terlalu sempit: katalog ini
+         menjual herbal untuk vertigo, migrain, asam urat, kolesterol, dan
+         lambung, tapi tidak satu pun nama itu ada — sehingga "mengatasi
+         vertigo" lolos dari mesin aturan dan hanya tertangkap kalau reviewer
+         LLM kebetulan menyebutnya. Aturan yang tidak memuat kosakata
+         katalognya sendiri bukan aturan, cuma harapan. */
       patterns: [
         '\\b(sembuh|menyembuhkan|kesembuhan|sembuhkan|penyembuhan)\\b',
         '\\b(mengobati|diobati|obat)\\b',
         '\\b(ampuh|mujarab|manjur)\\b',
         '\\banti\\s*(kanker|kolesterol|diabetes|radang|bakteri)\\b',
         '\\b(detoks|detoksifikasi)\\b',
-        '\\bmenurunkan\\s+(tekanan\\s+darah|gula\\s+darah|kolesterol|berat\\s+badan)\\b',
-        '\\b(mengatasi|menghilangkan|meredakan)\\s+(penyakit|sakit|nyeri|maag|gatal|jerawat|dermatitis|batuk|flu)\\b',
-        '\\b(terapi|pengobatan)\\b'
+        '\\bmenurunkan\\s+(tekanan\\s+darah|gula\\s+darah|kolesterol|berat\\s+badan|asam\\s+urat)\\b',
+        '\\b(mengatasi|menghilangkan|meredakan|mengurangi|meredam|menumpas|membasmi|bebas)\\s+(penyakit|sakit|nyeri|maag|gatal|jerawat|dermatitis|batuk|flu|pilek|demam|vertigo|migrain|migrane|pusing|kepala|asam\\s+urat|kolesterol|darah\\s+tinggi|hipertensi|rematik|encok|linu|pegal|kesemutan|lambung|gastritis|sembelit|wasir|diare|insomnia|susah\\s+tidur|sesak|kista|miom|tumor|kanker|ginjal|liver|prostat|radang|infeksi)\\b',
+        '\\b(terapi|pengobatan)\\b',
+        '\\b(bikin|bisa\\s+bikin|mampu)\\s+(sembuh|hilang|reda|kempes|turun)\\b'
       ]
     },
 
@@ -113,8 +120,11 @@ window.RULEBOOK = {
       fix: 'Turunkan jadi pengalaman pribadi yang jujur, atau kutip syarat garansi persis seperti di sumber.',
       patterns: [
         '\\b(dijamin|jaminan|garansi|terbukti)\\b',
+        '\\b(uang\\s+kembali|ganti\\s+rugi|refund|garansi\\s+uang)\\b',
         '100\\s?%',
-        '\\bpasti\\s+\\w+\\b'
+        /* "pasti bukan obat" adalah penyangkalan, bukan janji. Tanpa penjaga
+           ini, frasa yang justru menurunkan klaim ikut diblokir. */
+        '\\bpasti\\s+(?!(bukan|tidak|tak|nggak|gak|belum|batal|gagal)\\b)\\w+\\b'
       ]
     },
 
