@@ -4615,6 +4615,16 @@ const PLOT_ANGLE = {
    tidak dikurangi dari target, model menulis 1290–1455 lalu link masuk dan
    totalnya jadi 1470–1630 — persis di celah yang tidak bisa dipecah jadi 3
    post (maks 1500) maupun 4 post (min 1720). */
+/* Dua larangan ini lahir dari kasus nyata: produk herbal BPOM yang deskripsinya
+   menulis "Untuk pengobatan: 3x2 kapsul", lalu Writer menyalin frasa itu dan
+   menambah klaim garansi yang tidak ada di sumber. Reviewer memblokir 3 iterasi
+   berturut-turut dan pipeline berhenti. Aturannya sudah ada di rulebook, tapi
+   Writer tidak pernah diberi tahu — jadi diberi tahu di sini. */
+const CLAIM_GUARD = [
+  '- Dilarang memakai kata klaim kesehatan: sembuh, menyembuhkan, mengobati, obat, ampuh, manjur, terapi, pengobatan. Kalau data produk memuat frasa itu, parafrase jadi aturan pakai: "diminum 3x2 kapsul sehari sesudah makan". Sebut produk dengan mereknya, bukan kata "obat".',
+  '- Jangan menyebut garansi, jaminan uang kembali, atau ganti rugi kecuali frasa itu tertulis persis di data produk.'
+];
+
 function threadSystem(parts, proseLo, proseHi) {
   const p = parts || 3;
   return [
@@ -4635,6 +4645,7 @@ function threadSystem(parts, proseLo, proseHi) {
     '- Maksimal 2 emoji untuk seluruh utas.',
     '- Dilarang memakai kalimat jualan klise: "wajib punya", "buruan", "harga spesial", "kualitas terjamin", "recommended banget".',
     '- Jangan mengarang fakta. Hanya pakai data produk yang diberikan. Kalau sebuah detail tidak ada di data, jangan sebut.',
+    ...CLAIM_GUARD,
     '- Sebut angka (harga, ukuran, jumlah) hanya kalau angkanya memang ada di data produk.',
     '- Setiap kalimat harus utuh dan bisa berdiri sendiri. Jangan menggantung kalimat yang lanjutannya baru ada di post berikutnya.',
     '- JANGAN menulis link apa pun. Link afiliasi ditambahkan otomatis di akhir.',
@@ -4792,7 +4803,8 @@ function tiktokSystem() {
     '- hashtags: 4 sampai 6 tag tanpa tanda #.',
     '- coverText: maksimal 28 karakter.',
     '- music: saran jenis musik/beat.',
-    'Jangan mengarang fakta di luar data produk.'
+    'Jangan mengarang fakta di luar data produk.',
+    ...CLAIM_GUARD
   ].join('\n');
 }
 

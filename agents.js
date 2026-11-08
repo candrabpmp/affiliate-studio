@@ -330,6 +330,23 @@ function rbReviseNote(violations) {
   ].join('\n');
 }
 
+/* Lapis 2 (LLM) boleh menambah aturan yang lolos dari pola, tapi tidak boleh
+   mengarang bukti yang bertentangan dengan definisi aturannya sendiri.
+   Kasus nyata yang memicu ini: R-01 — "angka dan spesifikasi harus ada di
+   sumber" — dilaporkan dengan bukti "juga bisa COD." yang tidak memuat angka
+   sama sekali. Mesin aturan deterministik tidak menemukannya, dan bukti itu
+   memblokir draf selama 3 iterasi lalu memaksa eskalasi.
+   Hanya aturan numerik yang diperiksa begini: untuk aturan pola, lapis 2
+   justru berguna karena menangkap parafrase yang tidak cocok regex. */
+function rbPlausible(pf, v) {
+  if (!v || !v.ruleId) return false;
+  const ev = String(v.evidence == null ? '' : v.evidence).trim();
+  if (!ev) return false;
+  const rule = rbRulesFor(pf).find((r) => r.id === v.ruleId);
+  if (rule && rule.kind === 'numeric' && !/\d/.test(ev)) return false;
+  return true;
+}
+
 /* ---------- pipeline ----------
    `onStep(nama, fase, info)` dipanggil setiap kali satu agent mulai dan selesai.
    Ini satu-satunya sumber untuk indikator "sedang bekerja" di UI — bukan timer,
@@ -399,9 +416,23 @@ async function runAgentPipeline(pf, item, onStep) {
     }
 
     /* gabung: kalau mesin aturan sudah menangkap sebuah aturan, bukti dari
-       mesin aturan yang dipakai — LLM hanya menambah aturan yang lolos dari pola */
+       mesin aturan yang dipakai — LLM hanya menambah aturan yang lolos dari pola.
+       Tambahan dari LLM disaring dulu: bukti yang tidak sesuai definisi
+       aturannya sendiri dibuang, dan pembuangannya dicatat di trace. */
     const scanIds = new Set(scan.map((v) => v.ruleId));
-    violations = scan.concat(llmList.filter((v) => !scanIds.has(v.ruleId)));
+    const llmExtra = [];
+    const llmDropped = [];
+    llmList.forEach((v) => {
+      if (scanIds.has(v.ruleId)) return;
+      if (rbPlausible(pf, v)) llmExtra.push(v); else llmDropped.push(v);
+    });
+    if (llmDropped.length) {
+      rbTraceAdd(trace, 'system',
+        `Reviewer LLM melaporkan ${llmDropped.length} bukti yang tidak sesuai definisi aturannya dan dibuang: `
+        + llmDropped.map((v) => `${v.ruleId} "${v.evidence}"`).join(' · '),
+        { iter: it, dropped: llmDropped.map((v) => ({ ruleId: v.ruleId, evidence: v.evidence })) });
+    }
+    violations = scan.concat(llmExtra);
 
     const blocked = violations.filter((v) => v.severity === 'block');
     const warned = violations.filter((v) => v.severity !== 'block');
