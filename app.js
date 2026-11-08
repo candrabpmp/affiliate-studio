@@ -4646,7 +4646,7 @@ const PLOT_ANGLE = {
 const CLAIM_GUARD = [
   '- Dilarang memakai kata klaim kesehatan: sembuh, menyembuhkan, mengobati, obat, ampuh, manjur, terapi, pengobatan. Kalau data produk memuat frasa itu, parafrase jadi aturan pakai: "diminum 3x2 kapsul sehari sesudah makan". Sebut produk dengan mereknya, bukan kata "obat".',
   '- Dilarang menempelkan kata kerja klaim (mengatasi, meredakan, menghilangkan, mengurangi, mengobati, menyembuhkan) pada nama penyakit atau keluhan (vertigo, migrain, pusing, sakit kepala, asam urat, kolesterol, lambung, dan sejenisnya). Ini berlaku juga saat klaim itu dikutip dari penjual atau dilembutkan: "katanya bisa mengatasi vertigo", "banyak yang bilang ampuh untuk migrain", "dulu dipakai untuk sakit kepala" — semuanya tetap klaim. Boleh menyebut keluhan tanpa kata kerja klaim: "buat yang sering pusing di jam kerja".',
-  '- Jangan menyebut garansi, jaminan uang kembali, atau ganti rugi kecuali frasa itu tertulis persis di data produk.'
+  '- Jangan menyebut garansi, jaminan, terjamin, uang kembali, atau ganti rugi kecuali frasa itu tertulis persis di data produk. "Terjamin aman" tetap janji, sekalipun penjual menyebut kata "aman".'
 ];
 
 function threadSystem(parts, proseLo, proseHi) {

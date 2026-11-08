@@ -119,7 +119,7 @@ window.RULEBOOK = {
       explain: '"Dijamin", "pasti", "100% berhasil", "sudah terbukti" adalah janji. Kalau bukan syarat resmi dari penjual, itu janji yang dibuat sendiri oleh afiliator.',
       fix: 'Turunkan jadi pengalaman pribadi yang jujur, atau kutip syarat garansi persis seperti di sumber.',
       patterns: [
-        '\\b(dijamin|jaminan|garansi|terbukti)\\b',
+        '\\b(dijamin|jaminan|terjamin|garansi|terbukti)\\b',
         '\\b(uang\\s+kembali|ganti\\s+rugi|refund|garansi\\s+uang)\\b',
         '100\\s?%',
         /* "pasti bukan obat" adalah penyangkalan, bukan janji. Tanpa penjaga
