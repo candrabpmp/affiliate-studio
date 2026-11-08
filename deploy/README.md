@@ -157,6 +157,51 @@ tidak dipakai karena tidak ada endpoint LLM di server.
 
 ---
 
+## Detail produk: kenapa tidak bisa diambil dari VPS
+
+Detail produk (spesifikasi, varian, deskripsi, gambar) **tidak** diambil di
+server ini, dan aplikasinya menyatakan itu terang-terangan — bukan gagal
+diam-diam.
+
+Dua sebab, keduanya belum bisa diakali dari sisi server:
+
+1. **Akses Shopee Open API belum ada.** Akun developer belum punya izin, jadi
+   detail resmi belum bisa diambil lewat jalur API.
+2. **IP VPS adalah IP datacenter.** Selama API belum ada, satu-satunya jalan
+   adalah membuka halaman produk — dan Shopee menolak permintaan dari alamat
+   datacenter sebelum HTML-nya keluar. Ekstraktor yang dipakai
+   (`scripts/extract_batch.py`) juga butuh Chrome desktop, yang tidak ada di
+   VPS.
+
+Karena itu server melaporkan kemampuannya lewat `GET /api/extract`
+(`capability: {available, mode, reason}`) dan `POST /api/extract` menjawab
+`{"status": "unavailable"}` — bukan 500. UI memakai jawaban itu untuk
+menampilkan keterangan: banner di tab Data Produk, popup sekali per sesi, dan
+tombol "Kenapa?".
+
+Yang dipakai sementara: **data yang sudah ada** — nama, harga, terjual, toko,
+komisi, plus detail yang pernah diekstrak dari mesin lokal. Generate tetap
+jalan tanpa detail; yang hilang hanya spesifikasi dan catatan ukuran, dan UI
+mengatakannya sebelum tombol ditekan.
+
+### Menyalakan kembali
+
+| Variabel | Arti |
+|---|---|
+| `SHOPEE_API=1` | Akses Shopee Open API sudah ada — detail diambil dari API (belum diimplementasikan; ini penanda status). |
+| `SHOPEE_EXTRACT=off` | Matikan ekstraksi walau mesinnya sanggup. |
+| `SHOPEE_EXTRACT=1` | Paksa coba ekstraksi di Linux (misal dijalankan dari mesin ber-IP rumah). |
+
+Tanpa variabel apa pun, keputusannya otomatis: Windows (mesin lokal dengan
+Chrome) boleh mengekstrak, Linux (VPS) tidak.
+
+Langkah pengembangan berikutnya: ganti isi `extract_capability()` + worker
+`_extract_worker` agar memanggil endpoint Shopee Open API
+(`/api/v2/product/get_item_detail`), lalu set `SHOPEE_API=1`. Jalur UI tidak
+perlu diubah — tombol yang sama akan berfungsi lagi.
+
+---
+
 ## Hasil verifikasi (diukur dari luar VPS, 7 Nov 2026)
 
 | Uji | Hasil |

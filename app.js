@@ -2908,7 +2908,7 @@ function emptyStartCard() {
       </div>
       <ol class="tiny" style="line-height:2;padding-left:18px;margin-top:14px">
         <li><b>Kumpulkan</b> — kamu tempel CSV dari Shopee Affiliate di tab <b>Data Produk</b>.</li>
-        <li><b>Ekstrak detail</b> — skrip Python ambil spesifikasi, ukuran, dan catatan toko dari halaman produk. Tanpa ini konten jadi generik.</li>
+        <li><b>Ekstrak detail</b> — spesifikasi, ukuran, dan catatan toko dari halaman produk. Di server ini belum bisa dijalankan otomatis: akses Shopee Open API belum ada dan IP datacenter ditolak Shopee, jadi detail diimpor manual atau memakai data yang sudah ada.</li>
         <li><b>Generate</b> — LLM menulis utas Threads dan skrip TikTok, masing-masing bercabang per platform.</li>
         <li><b>Review</b> — kamu baca, tandai regenerate, atau loloskan. Hanya yang lolos yang boleh masuk antrean.</li>
         <li><b>Jadwal</b> — penjadwal memberi slot, konten tayang, lalu kamu tandai sudah posting.</li>
@@ -3034,6 +3034,14 @@ function viewData() {
   };
 
   return `
+  ${shopeeBlocked() ? `<div class="hint mb14">
+    <b>Detail produk memakai data yang sudah ada.</b>
+    ${(SHOPEE_CAP && SHOPEE_CAP.reason === 'dimatikan')
+      ? 'Ekstraksi detail dimatikan lewat konfigurasi server.'
+      : 'Akses <b>Shopee Open API</b> belum tersedia, dan server ini berjalan di IP datacenter — halaman produk tidak bisa dibuka dari sini.'}
+    Konten tetap dibuat dari katalog (nama, harga, terjual, toko, komisi) plus detail yang pernah diekstrak.
+    <button class="btn btn-xs" data-act="shopee-notice" style="margin-left:6px">Kenapa?</button>
+  </div>` : ''}
   ${perluKerja ? `
   <div class="card mb14" style="border-color:var(--warn)">
     <div class="card-body">
@@ -3051,7 +3059,7 @@ function viewData() {
         <button class="btn" data-act="export-pending">Unduh pending.json</button>
         <button class="btn" data-act="import-detail">Import hasil manual (JSON)</button>
         <div class="spacer"></div>
-        <span class="tiny muted">ekstraksi jalan dari sini — tanpa terminal</span>
+        <span class="tiny muted">${shopeeBlocked() ? 'menunggu akses Shopee Open API' : 'ekstraksi jalan dari sini — tanpa terminal'}</span>
       </div>
     </div>
   </div>` : ''}
@@ -3097,9 +3105,11 @@ function viewData() {
         <button class="btn btn-sm" data-act="import-detail">Import hasil manual (JSON)</button>
       </div>
       <div class="hint mt8">
-        <b>Ambil detail + media</b> menjalankan skrip dari server: detail produk (spesifikasi, varian, deskripsi)
+        ${shopeeBlocked()
+          ? `<b>Ambil detail + media</b> belum bisa dijalankan dari server ini: akses Shopee Open API belum ada dan IP datacenter ditolak Shopee. Detail baru bisa masuk lewat <b>Import hasil manual (JSON)</b> dari mesin yang punya akses.`
+          : `<b>Ambil detail + media</b> menjalankan skrip dari server: detail produk (spesifikasi, varian, deskripsi)
         masuk ke database, gambar dan video produk diunduh ke <code>assets/&lt;id&gt;/</code>. Tanpa terminal.
-        Butuh Chrome terpasang dan koneksi internet.
+        Butuh Chrome terpasang dan koneksi internet.`}
       </div>
       ${batchList.length ? `<div class="tiny muted mt8">Batch tersimpan: ${batchList.map((b) => `${esc(b)} (${batches[b]})`).join(' · ')}</div>` : ''}
       ` : `
@@ -3191,7 +3201,10 @@ function viewReview() {
   if (filter === 'kosong') list = list.filter((i) => !hasContent(i, pf));
   else if (filter !== 'semua') list = list.filter((i) => plat(i, pf).status === filter && hasContent(i, pf));
 
-  const siapGenerate = items.filter((i) => !hasContent(i, pf) && draftReady(i)).length;
+  /* Semua produk bisa digenerate: detail hanya menambah spesifikasi dan
+     catatan ukuran. Yang belum punya detail dihitung terpisah supaya
+     keterangannya jujur — bukan untuk memblokir tombolnya. */
+  const siapGenerate = items.filter((i) => !hasContent(i, pf)).length;
   const tanpaDetail = items.filter((i) => !hasContent(i, pf) && !draftReady(i)).length;
 
   return `
@@ -3222,10 +3235,11 @@ function viewReview() {
     on-screen text maks 6 kata · caption maks 2.200 karakter · link di bio, bukan di caption.
   </div>`}
 
-  ${tanpaDetail ? `<div class="hint mb14" style="border-color:var(--warn)">
-    <b>${tanpaDetail} produk belum bisa digenerate</b> karena detail Shopee-nya belum diambil.
-    Draf dibuat dari detail — spesifikasi, fitur, catatan ukuran — bukan dari nama produk saja.
-    <button class="btn btn-xs" data-act="nav" data-view="data" style="margin-left:6px">Ambil detail</button>
+  ${tanpaDetail ? `<div class="hint mb14">
+    <b>${tanpaDetail} produk akan digenerate dari data katalog</b> karena detail Shopee-nya belum ada.
+    Draf tetap dibuat dari nama, harga, terjual, toko, dan komisi — tanpa spesifikasi, fitur,
+    dan catatan ukuran, jadi hasilnya lebih umum.
+    <button class="btn btn-xs" data-act="shopee-notice" style="margin-left:6px">Kenapa detail belum ada?</button>
   </div>` : ''}
 
   <div class="review-grid">
@@ -3560,9 +3574,10 @@ function agentPanel(item, pf) {
   </details>`;
 }
 
-/* bahan untuk membuat draf sudah ada? Detail produk = spesifikasi, fitur,
-   catatan ukuran, ongkir, dan klaim toko. Tanpa itu draf hanya berisi
-   nama/harga/terjual — bukan alasan yang cukup untuk membuatnya. */
+/* Apakah produk punya detail hasil ekstraksi (spesifikasi, fitur, catatan
+   ukuran, ongkir, klaim toko). Ini bukan syarat generate lagi: detail hanya
+   menambah bahan. Tanpa detail, draf dibuat dari katalog dan hasilnya lebih
+   umum — UI menjelaskan itu, bukan memblokir. */
 function draftReady(item) {
   return !!(item && item.detail);
 }
@@ -3576,11 +3591,11 @@ function emptyDraftBody(i, pf) {
     <h4>Belum ada draf ${label}</h4>
     <p>${siap
       ? 'Detail produk sudah ada. Draf ditulis LLM saat kamu menekan Generate — bukan otomatis saat import.'
-      : 'Detail produk belum diambil. Tanpa spesifikasi, fitur, dan catatan ukuran, draf hanya akan berisi nama, harga, dan jumlah terjual.'}</p>
+      : 'Detail produk belum ada, jadi draf dibuat dari data katalog: nama, harga, terjual, toko, dan komisi. Spesifikasi dan catatan ukuran tidak ikut.'}</p>
     ${err ? `<div class="hint warn" style="text-align:left">Generate terakhir gagal: ${esc(err)}</div>` : ''}
     <div class="row" style="justify-content:center;margin-top:12px;flex-wrap:wrap">
       <button class="btn btn-primary" data-act="regen-now" data-key="${i.key}" data-pf="${pf}" ${aiReady() ? '' : 'disabled title="Isi konfigurasi LLM di Pengaturan"'}>Generate ${label} sekarang</button>
-      ${siap ? '' : `<button class="btn" data-act="nav" data-view="data">Ambil detail dulu</button>`}
+      ${siap ? '' : `<button class="btn" data-act="shopee-notice">Kenapa detail belum ada?</button>`}
     </div>
   </div>`;
 }
@@ -5697,8 +5712,80 @@ function render() {
    POST /api/extract memulai, GET /api/extract memantau. Hasilnya langsung
    dibaca dari data/detail_produk.json lalu ditempel ke database. */
 let _exTimer = null;
+let SHOPEE_CAP = null;          // hasil pemeriksaan kemampuan server terakhir
+let _shopeeProceed = null;      // aksi yang dijalankan kalau pengguna memilih lanjut
 
-function startExtractUI() {
+function shopeeBlocked() {
+  return !!(SHOPEE_CAP && SHOPEE_CAP.available === false);
+}
+
+async function probeShopee() {
+  try {
+    const r = await fetch(API + '/extract', { cache: 'no-store' });
+    const j = await r.json();
+    SHOPEE_CAP = j.capability || null;
+  } catch (e) {
+    SHOPEE_CAP = null;          // server diam: jangan mengklaim apa pun
+  }
+  return SHOPEE_CAP;
+}
+
+/* Keterangan keadaan, bukan peringatan galat. Detail belum bisa diambil dari
+   server karena akses Shopee Open API belum ada — jadi yang ditampilkan
+   adalah sebabnya, apa yang dipakai sementara, dan rencananya. */
+function openShopeeNotice(opts) {
+  const o = opts || {};
+  const cap = SHOPEE_CAP || {};
+  const alasan = cap.reason === 'dimatikan'
+    ? 'Ekstraksi dimatikan lewat konfigurasi server.'
+    : 'Server berjalan di IP datacenter, dan Shopee menolak permintaan halaman produk dari alamat seperti itu.';
+  openModal(`
+    <div class="modal-head">
+      <div><h3>Detail produk belum bisa diambil dari server</h3><p>Akses Shopee Open API belum tersedia.</p></div>
+      <button class="x" data-close="1">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint mb14">${esc(alasan)}</div>
+      <div class="kv"><span>Akses Shopee Open API</span><b>belum ada</b></div>
+      <div class="kv"><span>Scrap halaman dari server</span><b>diblokir Shopee</b></div>
+      <div class="kv"><span>Sumber data sekarang</span><b>katalog + detail yang sudah diekstrak</b></div>
+      <div class="hint mt14">
+        <b>Rencana pengembangan:</b> begitu akun <b>Shopee Developer</b> mendapat akses
+        <b>Shopee Open API</b>, detail produk — spesifikasi, varian, deskripsi, harga —
+        diambil dari API resmi, bukan dari halaman web. Tombol ini akan berfungsi lagi
+        tanpa mengubah data yang sudah ada.
+      </div>
+      <div class="hint mt14">
+        Sementara ini konten dibuat dari <b>data yang sudah ada</b>: nama, harga, terjual,
+        toko, komisi, dan detail produk yang pernah diekstrak. Tanpa detail, draf lebih
+        umum karena spesifikasi dan catatan ukuran tidak ikut.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="1">Mengerti</button>
+      ${o.withImport === false ? '' : '<button class="btn" data-act="import-detail">Impor hasil manual (JSON)</button>'}
+      ${o.proceedLabel ? `<button class="btn btn-primary" data-act="shopee-proceed">${esc(o.proceedLabel)}</button>` : ''}
+    </div>`);
+}
+
+/* Jalankan fn hanya kalau pengguna setuju lanjut tanpa detail. */
+function askProceed(label, fn) {
+  _shopeeProceed = () => { closeModal(); fn(); };
+  openShopeeNotice({ proceedLabel: label });
+}
+
+/* Sekali per sesi, saat tab Data Produk dibuka: pengunjung perlu tahu sebabnya
+   sebelum menekan tombol yang tidak akan berhasil. Tidak diulang terus supaya
+   tidak menghalangi pekerjaan. */
+function maybeShopeeNotice() {
+  if (!shopeeBlocked() || S.ui.view !== 'data') return;
+  if (document.querySelector('.modal')) return;         // jangan menimpa modal lain
+  try { if (sessionStorage.getItem('afiliasi.shopee.notice-seen')) return; } catch (e) { /* abaikan */ }
+  try { sessionStorage.setItem('afiliasi.shopee.notice-seen', '1'); } catch (e) { /* abaikan */ }
+  openShopeeNotice();
+}
+
+function openExtractModal() {
   openModal(`
     <div class="modal-head"><div><h3>Mengambil detail produk</h3><p>Chrome headless membuka halaman Shopee satu per satu.</p></div></div>
     <div class="modal-body">
@@ -5709,12 +5796,22 @@ function startExtractUI() {
       <div class="hint mt14">Jeda 9–15 detik antar produk supaya tidak kena proteksi Shopee. Jangan tutup jendela server selama proses berjalan.</div>
     </div>
     <div class="modal-foot"><button class="btn" data-close="1">Tutup</button></div>`);
+}
 
-  const started = fetch(API + '/extract', { method: 'POST' })
-    .then((r) => r.json())
-    .catch((e) => ({ status: 'error', error: String(e.message || e) }));
-
-  started.then(() => { pollExtract(); });
+async function startExtractUI() {
+  let j;
+  try {
+    const r = await fetch(API + '/extract', { method: 'POST' });
+    j = await r.json();
+  } catch (e) {
+    j = { status: 'error', error: String(e.message || e) };
+  }
+  if (j && j.capability) SHOPEE_CAP = j.capability;
+  /* Server menjawab "unavailable" kalau detail memang tidak mungkin diambil
+     dari sini — bukan kegagalan, jadi tidak perlu modal progres yang berputar. */
+  if (j && j.status === 'unavailable') { openShopeeNotice(); return; }
+  openExtractModal();
+  pollExtract();
 }
 
 function exEl(sel) { return document.querySelector(sel); }
@@ -5878,7 +5975,7 @@ const ACTIONS = {
     log('info', 'Penyiapan LLM dilewati — Generate dimatikan sampai diisi');
   },
 
-  nav(el) { S.ui.view = el.dataset.view; save(); render(); window.scrollTo(0, 0); },
+  nav(el) { S.ui.view = el.dataset.view; save(); render(); window.scrollTo(0, 0); maybeShopeeNotice(); },
 
   tab(el) { S.ui.reviewTab = el.dataset.pf; S.ui.reviewFilter = 'semua'; save(); render(); },
   filter(el) { S.ui.reviewFilter = el.dataset.f; save(); render(); },
@@ -5966,26 +6063,25 @@ const ACTIONS = {
     const it = findItem(el.dataset.key), pf = el.dataset.pf;
     if (!it) return;
     if (!aiReady()) { toast('Isi konfigurasi LLM dulu di Pengaturan', 'err'); return; }
-    if (!draftReady(it)) {
-      const lanjut = confirm('Detail produk belum ada.\n\nDraf akan dibuat hanya dari nama, harga, terjual, dan toko — tanpa spesifikasi, fitur, atau catatan ukuran. Hasilnya generik.\n\nTetap generate?');
-      if (!lanjut) {
-        toast('Dibatalkan — ambil detail produk dulu di tab Data Produk', '');
-        return;
-      }
-    }
-    el.disabled = true;
-    el.textContent = '…';
-    generateFor(pf, [it]).then((r) => {
-      save(); render();
-      toast(r.ok ? 'Konten baru dibuat dengan LLM' + (r.moved ? ' · filter ke Semua' : '') : 'Gagal: ' + r.lastErr, r.ok ? 'ok' : 'err');
-    });
+    const jalan = () => {
+      el.disabled = true;
+      el.textContent = '…';
+      generateFor(pf, [it]).then((r) => {
+        save(); render();
+        toast(r.ok ? 'Konten baru dibuat dengan LLM' + (r.moved ? ' · filter ke Semua' : '') : 'Gagal: ' + r.lastErr, r.ok ? 'ok' : 'err');
+      });
+    };
+    /* Tanpa detail tetap boleh. Bedanya dijelaskan lebih dulu, bukan diblokir
+       dengan confirm() yang isinya sama saja. */
+    if (!draftReady(it)) { askProceed('Tetap generate', jalan); return; }
+    jalan();
   },
 
-  /* generate semua yang sudah punya detail tapi belum punya draf */
+  /* generate semua yang belum punya draf — detail bukan syarat */
   'gen-ready'(el) {
     const pf = el.dataset.pf;
     if (!aiReady()) { toast('Isi konfigurasi LLM dulu di Pengaturan', 'err'); return; }
-    const list = activeItems().filter((i) => !hasContent(i, pf) && draftReady(i));
+    const list = activeItems().filter((i) => !hasContent(i, pf));
     if (!list.length) return toast('Tidak ada produk yang siap digenerate', '');
     openProgress([{ pf, list }]);
   },
@@ -6296,13 +6392,10 @@ const ACTIONS = {
   'regen-all'() {
     if (!aiReady()) { toast('Isi konfigurasi LLM dulu di Pengaturan', 'err'); return; }
     const semua = activeItems();
-    const siap = semua.filter((i) => draftReady(i));
-    const lewat = semua.length - siap.length;
-    if (!siap.length) {
-      return toast('Belum ada produk yang punya detail — ambil detail dulu', 'err');
-    }
-    if (lewat && !confirm(`${siap.length} produk punya detail dan akan digenerate ulang.\n${lewat} produk belum punya detail dan akan dilewati.\n\nLanjut?`)) return;
-    openProgress([{ pf: 'threads', list: siap }, { pf: 'tiktok', list: siap }]);
+    if (!semua.length) return toast('Belum ada produk', 'err');
+    const tanpa = semua.filter((i) => !draftReady(i)).length;
+    if (tanpa && !confirm(`${semua.length} produk akan digenerate ulang.\n${tanpa} di antaranya belum punya detail, jadi drafnya dibuat dari data katalog saja.\n\nLanjut?`)) return;
+    openProgress([{ pf: 'threads', list: semua }, { pf: 'tiktok', list: semua }]);
   },
 
   'toggle-run'() {
@@ -6483,7 +6576,7 @@ const ACTIONS = {
     openModal(`
       <div class="modal-head"><div><h3>Ekstrak detail ${list.length} produk</h3><p>Detail dipakai untuk spesifikasi, catatan ukuran, dan klaim seller di konten.</p></div><button class="x" data-close="1">×</button></div>
       <div class="modal-body">
-        <div class="hint">Daftar <code>pending.json</code> sudah diunduh. Jalankan tiga langkah ini di terminal:</div>
+        <div class="hint">Daftar <code>pending.json</code> sudah diunduh. Jalankan tiga langkah ini di terminal — <b>di mesin lokal</b>, bukan di server: ekstraksi butuh Chrome desktop dan IP non-datacenter.</div>
         <ol class="tiny mt14" style="line-height:2;padding-left:18px">
           <li>Pindahkan <code>pending.json</code> ke folder <code>data/</code> (kalau tidak dipindah, skrip tetap mencarinya di folder Downloads).</li>
           <li>Jalankan <code>python scripts/extract_batch.py</code></li>
@@ -6501,6 +6594,15 @@ const ACTIONS = {
     if (!pending.length) return toast('Semua produk sudah punya detail dan media', '');
     startExtractUI();
   },
+
+  /* tombol "lanjut tanpa detail" di dalam keterangan Shopee */
+  'shopee-proceed'() {
+    const f = _shopeeProceed;
+    _shopeeProceed = null;
+    if (f) f(); else closeModal();
+  },
+
+  'shopee-notice'() { openShopeeNotice(); },
 
   'import-detail'() {
     const inp = document.createElement('input');
@@ -6803,7 +6905,7 @@ const ACTIONS = {
   'ai-gen'(el) {
     const pf = el.dataset.pf;
     if (!aiReady()) { toast('Isi konfigurasi LLM dulu di kartu Generator LLM', 'err'); return; }
-    const list = activeItems().filter((i) => draftReady(i) && !hasContent(i, pf));
+    const list = activeItems().filter((i) => !hasContent(i, pf));
     if (!list.length) { toast('Tidak ada draf yang perlu dibuat — semua sudah punya konten', ''); return; }
     openProgress([{ pf, list }]);
   },
@@ -6812,13 +6914,16 @@ const ACTIONS = {
     if (!aiReady()) { toast('Isi konfigurasi LLM dulu di Pengaturan', 'err'); return; }
     const it = findItem(el.dataset.key);
     if (!it) return;
-    if (!draftReady(it) && !confirm('Detail produk belum ada.\n\nLLM hanya akan menerima nama, harga, terjual, dan toko sebagai bahan. Hasilnya generik.\n\nTetap generate dengan LLM?')) return;
-    el.disabled = true;
-    el.textContent = '…';
-    generateFor(pf, [it]).then((r) => {
-      save(); render();
-      toast(r.ok ? 'Konten dibuat dengan LLM' + (r.moved ? ' · filter ke Semua' : '') : 'Gagal: ' + r.lastErr, r.ok ? 'ok' : 'err');
-    });
+    const jalan = () => {
+      el.disabled = true;
+      el.textContent = '…';
+      generateFor(pf, [it]).then((r) => {
+        save(); render();
+        toast(r.ok ? 'Konten dibuat dengan LLM' + (r.moved ? ' · filter ke Semua' : '') : 'Gagal: ' + r.lastErr, r.ok ? 'ok' : 'err');
+      });
+    };
+    if (!draftReady(it)) { askProceed('Tetap generate', jalan); return; }
+    jalan();
   },
   'ai-clear'() {
     if (!confirm('Hapus API key LLM yang tersimpan di browser ini?')) return;
@@ -7591,3 +7696,7 @@ if (SEED_NOTE) log('info', SEED_NOTE);
 render();              // tampilkan layar "menghubungkan…" dulu
 probeServerLlm().then(maybeLlmSetup);   // tanya apakah key LLM diurus server (VPS)
 initStore();           // lalu ambil state dari database; tanpa fallback lokal
+/* Sumber detail produk: kalau server menyatakan tidak bisa (IP datacenter,
+   akses Shopee Open API belum ada), UI menampilkan keterangan — bukan
+   tombol yang gagal tanpa sebab. */
+probeShopee().then((cap) => { if (cap && cap.available === false) render(); });

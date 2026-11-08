@@ -294,6 +294,39 @@ _extract = {
 _extract_lock = threading.Lock()
 
 
+# ---------------- status sumber detail produk ----------------
+# Detail produk seharusnya datang dari Shopee Open API. Selama akun developer
+# belum punya akses, satu-satunya jalan adalah membuka halaman produk dengan
+# browser — dan itu tidak bisa dikerjakan dari mesin ini: IP VPS adalah IP
+# datacenter, yang ditolak Shopee sebelum HTML halaman keluar. Ekstraktor yang
+# dipakai juga bergantung pada Chrome desktop (lihat scripts/extract_batch.py).
+#
+# Jadi server tidak berpura-pura bisa. Kemampuannya dinyatakan lewat
+# /api/extract, dan UI menampilkan keterangan — bukan pesan galat mentah.
+SHOPEE_API_READY = os.environ.get("SHOPEE_API", "").strip().lower() in ("1", "true", "yes", "on")
+EXTRACT_ENABLED = os.environ.get("SHOPEE_EXTRACT", "auto").strip().lower() not in ("0", "off", "false", "no")
+
+
+def extract_capability():
+    """Boleh tidak detail diambil dari server ini, dan alasannya."""
+    if SHOPEE_API_READY:
+        return {"available": True, "mode": "api", "reason": "",
+                "note": "Detail diambil dari Shopee Open API."}
+    if not EXTRACT_ENABLED:
+        return {"available": False, "mode": "off", "reason": "dimatikan",
+                "note": "Ekstraksi dimatikan lewat SHOPEE_EXTRACT=off."}
+    if not (ROOT / "scripts" / "extract_batch.py").exists():
+        return {"available": False, "mode": "scrape", "reason": "skrip tidak ada",
+                "note": "scripts/extract_batch.py tidak ditemukan di server ini."}
+    if os.name != "nt":
+        # Linux = VPS. Bukan soal sistem operasi, tapi soal siapa yang membuka
+        # halaman: ekstraktor butuh Chrome desktop dan IP non-datacenter.
+        return {"available": False, "mode": "scrape", "reason": "ip datacenter",
+                "note": "Server berjalan di IP datacenter; Shopee menolak halaman produk dari alamat itu."}
+    return {"available": True, "mode": "scrape", "reason": "",
+            "note": "Ekstraksi lewat Chrome di mesin ini."}
+
+
 def punya_media(pid):
     """True kalau folder assets/<pid>/ sudah berisi file (atau ditandai kosong)."""
     folder = ROOT / "assets" / str(pid)
@@ -784,6 +817,7 @@ class Handler(SimpleHTTPRequestHandler):
             job["pending"] = len(pending)
             job["pendingDetail"] = sum(1 for p in pending if p["need"] == "detail")
             job["pendingMedia"] = sum(1 for p in pending if p["need"] == "media")
+            job["capability"] = extract_capability()
             return self._json(job)
         if path == "/api/assets":
             return self._json(assets_manifest())
@@ -850,7 +884,18 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/video":
             return self._video_upload(qs)
         if path == "/api/extract":
+            cap = extract_capability()
+            if not cap["available"]:
+                # 200, bukan 4xx: ini keadaan yang sudah diketahui, bukan
+                # permintaan salah. UI memakai ini untuk menampilkan keterangan.
+                return self._json({
+                    "status": "unavailable",
+                    "reason": cap["reason"],
+                    "capability": cap,
+                    "message": "Detail produk belum bisa diambil dari server ini.",
+                })
             started, job = start_extract()
+            job["capability"] = cap
             return self._json(job, 200 if started else 409)
         if path == "/api/restore":
             try:
