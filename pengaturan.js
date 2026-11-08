@@ -37,8 +37,11 @@ window.SAVED_SETTINGS = {
       model: 'ag/gemini-3.8-flash-low',
       // Jangan isi API key di sini kalau repo ini publik. Isi lewat halaman
       // Pengaturan — key tersimpan di data/affiliate.db yang di-gitignore.
+      // Base URL dikosongkan: aplikasi ini dipakai publik, jadi nilai awal tidak
+      // boleh menunjuk ke gateway lokal pemilik. Pengunjung mengisi sendiri
+      // lewat popup (tersimpan di localStorage browser masing-masing).
       key: '',
-      baseUrl: 'http://localhost:20128/v1',
+      baseUrl: '',
       temp: 0.9
     },
     tiktok: {

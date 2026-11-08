@@ -1988,6 +1988,7 @@ const SEED_CSV = `ID Produk,Nama Produk,Harga,Penjualan,Nama Toko,Komisi hingga,
 
 const AI_PRESETS = {
   gemini:     { label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com', models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'] },
+  'gemini-oai': { label: 'Google Gemini (OpenAI-compatible)', base: 'https://generativelanguage.googleapis.com/v1beta/openai', models: ['gemini-2.5-flash', 'gemini-2.5-pro'] },
   openai:     { label: 'OpenAI', base: 'https://api.openai.com/v1', models: ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o'] },
   openrouter: { label: 'OpenRouter', base: 'https://openrouter.ai/api/v1', models: ['google/gemini-2.5-flash', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'] },
   groq:       { label: 'Groq', base: 'https://api.groq.com/openai/v1', models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] },
@@ -4908,6 +4909,10 @@ function aiCard() {
       <span class="badge ${ready ? 'b-ok' : ''}">${ready ? 'siap dipakai' : 'belum diisi'}</span>
     </div>
     <div class="card-body">
+      ${lsLlmActive() ? `<div class="hint warn mb14">
+        <b>Tidak dipakai.</b> Browser ini sedang memakai setelan <b>“LLM di komputer ini”</b>.
+        Matikan di kartu bawah kalau ingin kembali ke setelan ini.
+      </div>` : ''}
       <div class="hint mb14">
         Satu konfigurasi untuk semua teks — <b>Threads dan TikTok</b> memakai model yang sama.
         Setiap <b>Generate</b> selalu lewat LLM ini; tidak ada lagi mode template, jadi hasilnya
@@ -4986,14 +4991,14 @@ function llmLokalCard() {
   <div class="card mb14">
     <div class="card-head">
       <h3>LLM di komputer ini</h3>
-      <span class="badge ${on ? 'b-ok' : ''}">${on ? 'aktif — server dilewati' : 'tidak aktif'}</span>
+      <span class="badge ${on ? 'b-ok' : ''}">${on ? 'aktif' : 'belum diisi'}</span>
     </div>
     <div class="card-body">
       <div class="hint mb14">
-        Jalur darurat kalau <b>VPS → laptop</b> bermasalah. Browser memanggil gateway lewat
-        <code>127.0.0.1</code> langsung, jadi permintaan LLM <b>tidak melewati VPS maupun tunnel</b>.
-        Setelan ini tinggal di browser ini saja (localStorage): tidak masuk database, tidak terlihat
-        pengunjung lain, dan hanya berfungsi di komputer yang benar-benar menjalankan gateway.
+        Semua permintaan LLM memakai setelan ini. Tersimpan di <b>browser ini saja</b>
+        (localStorage): tidak masuk database, tidak terlihat pengunjung lain, dan tidak
+        pernah dikirim ke server. Endpoint harus <b>OpenAI-compatible</b> dan bisa diakses
+        lewat HTTPS — alamat <code>localhost</code> diblokir browser pada halaman publik.
       </div>
       <div class="row mb14">
         <label class="chk"><input type="checkbox" ${on ? 'checked' : ''} data-act="ls-llm-toggle"> Pakai LLM di komputer ini</label>
@@ -5057,43 +5062,121 @@ async function testLlmLokal() {
 /* Muncul hanya kalau tidak ada LLM sama sekali: server tidak punya, browser
    juga belum. Pengunjung VPS tidak akan pernah melihatnya karena di sana
    mode server sudah aktif. */
+/* Menguji endpoint OpenAI-compatible sebelum disimpan. Sengaja tidak menyimpan
+   konfigurasi yang belum terbukti bisa dipanggil: lebih baik gagal di sini
+   dengan pesan jelas daripada gagal di tengah pipeline 3 agen. */
+async function probeLlm(baseUrl, key, model) {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!base) return { ok: false, message: 'Base URL wajib diisi.' };
+  if (!/^https?:\/\//i.test(base)) return { ok: false, message: 'Base URL harus diawali https:// atau http://' };
+  if (location.protocol === 'https:' && /^http:\/\//i.test(base)) {
+    return { ok: false, message: 'Halaman ini HTTPS, jadi endpoint http:// diblokir browser. Pakai https://, atau buka aplikasi lewat http://127.0.0.1:8787.' };
+  }
+  try {
+    const r = await fetch(base + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(key ? { Authorization: 'Bearer ' + key } : {})
+      },
+      body: JSON.stringify({
+        model: model || 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'Balas satu kata: siap' }],
+        max_tokens: 16,
+        stream: false
+      })
+    });
+    if (r.status === 401 || r.status === 403) return { ok: false, message: 'Key ditolak (HTTP ' + r.status + '). Periksa apakah key-nya benar dan masih aktif.' };
+    if (r.status === 404) return { ok: false, message: 'Endpoint atau model tidak ditemukan (404). Cek Base URL dan nama model.' };
+    if (r.status === 429) return { ok: false, message: 'Kuota atau batas laju habis (429). Coba lagi nanti atau pakai key lain.' };
+    if (!r.ok) return { ok: false, message: 'Endpoint menjawab HTTP ' + r.status + '.' };
+    const d = await r.json();
+    const txt = (((d.choices || [])[0] || {}).message || {}).content;
+    if (!txt) return { ok: false, message: 'Tersambung, tapi balasannya kosong. Biasanya nama model salah.' };
+    return { ok: true, sample: String(txt).slice(0, 40) };
+  } catch (e) {
+    return { ok: false, message: 'Tidak bisa menghubungi endpoint. Kemungkinan alamatnya salah, atau penyedia menolak akses dari browser (CORS).' };
+  }
+}
+
+async function saveLlmSetup(btn) {
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const msg = document.querySelector('[data-setup-msg]');
+  const provider = (document.getElementById('setup-provider') || {}).value || 'openai';
+  const baseUrl = val('setup-base');
+  const key = val('setup-key');
+  const model = val('setup-model');
+
+  if (!baseUrl) { if (msg) msg.textContent = 'Base URL wajib diisi.'; return; }
+  if (!model) { if (msg) msg.textContent = 'Nama model wajib diisi.'; return; }
+  if (!key && provider !== 'custom') { if (msg) msg.textContent = 'API key wajib diisi untuk penyedia publik.'; return; }
+
+  if (btn) btn.disabled = true;
+  if (msg) msg.textContent = 'menguji koneksi…';
+  const r = await probeLlm(baseUrl, key, model);
+  if (btn) btn.disabled = false;
+  if (!r.ok) { if (msg) msg.textContent = r.message; return; }
+
+  lsLlmSet({ enabled: true, provider, baseUrl, key, model });
+  closeModal();
+  render();
+  log('info', 'LLM pribadi tersimpan di browser ini — model ' + model + ' (' + baseUrl + ')');
+}
+
 function openLlmSetup() {
+  const p = AI_PRESETS.openai;
+  const opts = Object.keys(AI_PRESETS)
+    .filter((k) => k !== 'gemini')
+    .map((k) => `<option value="${k}"${k === 'openai' ? ' selected' : ''}>${AI_PRESETS[k].label}</option>`).join('');
   openModal(`
     <div class="modal-head">
-      <div><h3>LLM belum disiapkan</h3><p>Tidak ada LLM di server, dan browser ini belum punya setelan.</p></div>
+      <div><h3>Pakai LLM kamu sendiri</h3><p>Sekali isi, tersimpan di browser ini saja.</p></div>
       <button class="x" data-close="1">×</button>
     </div>
     <div class="modal-body">
       <div class="hint mb14">
-        Isi gateway yang bisa dijangkau <b>komputer ini</b> — misalnya
-        <code>http://127.0.0.1:20128/v1</code>. Disimpan di browser ini saja, tidak dikirim ke server.
-        Boleh dilewati; aplikasi tetap bisa dijelajahi, hanya tombol Generate yang mati.
+        Aplikasi ini menjalankan 3 agen (Planner → Writer → Reviewer) di browser, jadi butuh
+        satu endpoint <b>OpenAI-compatible</b>. Key tidak dikirim ke server mana pun — hanya
+        dipakai browser ini untuk memanggil penyedia pilihanmu.
       </div>
+
       <div class="field">
-        <div class="field-label"><span>Base URL</span></div>
-        <input class="input" id="setup-base" value="http://127.0.0.1:20128/v1">
+        <div class="field-label"><span>Penyedia</span></div>
+        <select class="select" id="setup-provider" style="max-width:none;width:100%">${opts}</select>
       </div>
+
       <div class="field mt14">
-        <div class="field-label"><span>API key <span class="tiny muted">— kosongkan kalau gateway tidak meminta</span></span></div>
-        <input class="input" type="password" id="setup-key" placeholder="key gateway" autocomplete="off">
+        <div class="field-label"><span>Base URL</span></div>
+        <input class="input" id="setup-base" value="${esc(p.base)}" placeholder="https://api.openai.com/v1">
       </div>
+
       <div class="field mt14">
         <div class="field-label"><span>Model</span></div>
-        <input class="input" id="setup-model" value="ag/gemini-3.8-flash-low">
+        <input class="input" id="setup-model" value="${esc(p.models[0])}" placeholder="gpt-4o-mini">
       </div>
+
+      <div class="field mt14">
+        <div class="field-label"><span>API key</span></div>
+        <input class="input" type="password" id="setup-key" placeholder="sk-…" autocomplete="off">
+      </div>
+
+      <div class="hint mt14">
+        Endpoint di <code>localhost</code> tidak akan bekerja dari halaman ini: browser memblokir
+        halaman publik yang memanggil jaringan lokal. Pakai alamat HTTPS milik penyedia.
+      </div>
+
+      <div class="tiny muted mt14" data-setup-msg></div>
     </div>
     <div class="modal-foot">
       <button class="btn" data-act="llm-setup-skip">Nanti saja</button>
-      <button class="btn btn-primary" data-act="llm-setup-save">Simpan di browser ini</button>
+      <button class="btn btn-primary" data-act="llm-setup-save">Tes &amp; simpan</button>
     </div>`);
 }
 
 function maybeLlmSetup() {
-  if (SERVER_LLM || lsLlmActive()) return;
-  // Jangan menagih kalau database sudah punya kunci: itu artinya sudah diisi
-  // lewat Pengaturan, dan popup hanya akan mengganggu.
+  if (lsLlmActive()) return;                 // browser ini sudah punya setelan
   const c = aiCfg();
-  if (c && c.key) return;
+  if (c && c.key) return;                    // database sudah menyimpan kunci
   try { if (sessionStorage.getItem(LS_SKIP)) return; } catch (e) { /* abaikan */ }
   openLlmSetup();
 }
@@ -5232,8 +5315,8 @@ function viewPengaturan() {
   const s = S.settings;
   return `
   ${cfgFileCard()}
-  ${aiCard()}
   ${llmLokalCard()}
+  ${aiCard()}
   ${copyEditorCard()}
   <div class="grid-2">
     <div class="stack">
@@ -5639,15 +5722,7 @@ const ACTIONS = {
     log('info', 'Setelan LLM lokal dihapus dari browser ini');
   },
 
-  'llm-setup-save'() {
-    const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-    const baseUrl = val('setup-base');
-    if (!baseUrl) { log('warn', 'Base URL belum diisi — penyiapan dibatalkan'); return; }
-    lsLlmSet({ enabled: true, baseUrl, key: val('setup-key'), model: val('setup-model') || 'ag/gemini-3.8-flash-low' });
-    closeModal();
-    render();
-    log('info', 'LLM lokal disimpan di browser ini — permintaan tidak lewat VPS');
-  },
+  'llm-setup-save'(el) { saveLlmSetup(el); },
 
   'llm-setup-skip'() {
     try { sessionStorage.setItem(LS_SKIP, '1'); } catch (e) { /* abaikan */ }
@@ -7178,6 +7253,19 @@ document.addEventListener('toggle', (e) => {
     if (d.open) _detOpen.add(key); else _detOpen.delete(key);
   }
 }, true);
+
+/* pilih penyedia di popup -> isi Base URL & model yang lazim dipakai */
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!t || t.id !== 'setup-provider') return;
+  const p = AI_PRESETS[t.value] || {};
+  const b = document.getElementById('setup-base');
+  const m = document.getElementById('setup-model');
+  if (b) b.value = p.base || '';
+  if (m) m.value = (p.models && p.models[0]) || '';
+  const msg = document.querySelector('[data-setup-msg]');
+  if (msg) msg.textContent = '';
+});
 
 document.addEventListener('input', (e) => {
   const t = e.target;

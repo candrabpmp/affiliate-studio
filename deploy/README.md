@@ -109,72 +109,51 @@ alamatnya publik. Semua sudah diuji ulang (lihat `server.py`):
 
 ---
 
-## LLM: key di server, bukan di browser
+## LLM: pengunjung membawa key sendiri
 
-**Sudah dipasang.** Ini yang berubah dan alasannya.
-
-Aplikasi aslinya memanggil LLM langsung dari browser, dengan key tersimpan di
-state. Di localhost itu wajar. Di VPS itu masalah: key yang dikirim ke browser
-bisa dibaca siapa pun lewat DevTools, dan endpoint-nya bisa dipakai orang lain
-untuk menghabiskan kuota.
-
-Sekarang:
+**Keputusan akhir.** Server **tidak** menyimpan kunci LLM, dan tidak memproksi
+permintaan LLM. Setiap pengunjung mengisi endpoint OpenAI-compatible miliknya
+sendiri; setelan itu tinggal di localStorage browser masing-masing.
 
 ```
-browser  ──POST /api/llm/chat/completions──▶  server.py  ──+Authorization──▶  upstream
-         (tanpa key)                                        (key dari .env)
+pengunjung ──▶ popup "Pakai LLM kamu sendiri" ──▶ tes koneksi ──▶ simpan di browser
+                                                                        │
+                                      semua request Planner/Writer/Reviewer
+                                                                        ▼
+                                                     penyedia pilihan pengunjung
 ```
 
-Bentuk permintaan dan balasan tetap OpenAI-compatible, jadi kode agen tidak
-berubah. Yang menentukan adalah `.env` di VPS:
+Kenapa begitu: sebelumnya LLM diproksi lewat VPS → tunnel → gateway di laptop
+pemilik. Jalur itu rapuh (laptop tidur, Wi-Fi putus) dan membuat penjurian
+bergantung pada satu mesin. Dengan key masing-masing, laptop pemilik keluar
+dari jalur sepenuhnya.
+
+| Yang perlu diketahui | Keterangan |
+|---|---|
+| Key disimpan di | `localStorage` browser pengunjung, kunci `afiliasi.llm.v1` |
+| Key dikirim ke server? | Tidak. `PUT /api/state` tidak pernah memuatnya |
+| Pengunjung tanpa key | Boleh melewati popup; data demo & jadwal tetap bisa dilihat, tombol Generate mati |
+| Endpoint lokal (`localhost`, Ollama, LM Studio) | **Tidak bisa** dari halaman HTTPS — Chrome memblokir halaman publik yang memanggil jaringan lokal (Local Network Access) |
+| Penyedia yang diuji CORS-nya | OpenAI, OpenRouter, Groq, DeepSeek, Anthropic — semuanya mengizinkan |
+
+`LLM_UPSTREAM` dan `LLM_API_KEY` sudah **dihapus** dari `.env` di VPS. Kode
+proksi `/api/llm` masih ada dan tidak mengganggu: tanpa `LLM_UPSTREAM`,
+`/api/llm/status` menjawab `configured:false` dan endpoint-nya 503.
+
+### Kalau nanti ingin memproksi lagi
+
+Isi ulang `.env`, lalu `systemctl restart affiliate-studio`:
 
 ```
-LLM_UPSTREAM=http://127.0.0.1:20128/v1
-LLM_API_KEY=<kunci gateway>
-LLM_MODEL=ag/gemini-3.8-flash-low
+LLM_UPSTREAM=https://<endpoint-openai-compatible>/v1
+LLM_API_KEY=<kunci>
+LLM_MODEL=<nama model>
 LLM_RATE_PER_10MIN=60
 ```
 
-`GET /api/llm/status` memberi tahu UI apakah mode ini aktif. Kalau aktif,
-`aiCfg()` memakai `location.origin + '/api/llm'` dan mengabaikan key di state —
-sehingga `GET /api/state` tidak lagi memuat kunci apa pun.
-
-### Batas laju wajib, bukan kemewahan
-
-Endpoint ini publik. Tanpa batas, satu orang bisa menekan Generate berulang dan
-menghabiskan kuota. `llm_allow()` membatasi 60 permintaan per 10 menit per IP
-(dibaca dari `X-Real-IP` yang diisi Caddy, karena di belakang proxy semua
-permintaan tampak datang dari 127.0.0.1). Bisa diubah lewat
-`LLM_RATE_PER_10MIN`.
-
-### Masalahnya: VPS tidak bisa menjangkau gateway di laptop
-
-Gateway Bos ada di `127.0.0.1:20128` **di laptop**, dan laptop tidak punya IP
-publik. Supaya rantainya bersambung, jalankan di laptop:
-
-```bash
-bash deploy/tunnel-llm.sh          # biarkan terminal ini terbuka
-```
-
-Skrip itu membuat port 20128 **di VPS** diteruskan ke port 20128 di laptop,
-dan menyambung ulang sendiri kalau putus.
-
-| Kondisi | Perilaku situs |
-|---|---|
-| Terowongan hidup | Generate berfungsi penuh — Planner → Writer → Reviewer |
-| Terowongan mati | Situs tetap bisa dibuka dan dijelajahi; Generate menjawab *"LLM tidak terjangkau"* |
-
-**Ini rapuh untuk penjurian.** Kalau laptop tidur atau Wi-Fi putus, juri
-melihat pesan error. Untuk demo yang benar-benar mandiri, ganti `LLM_UPSTREAM`
-ke penyedia cloud (butuh key sendiri) — kode tidak perlu diubah lagi, cukup
-`.env` lalu `systemctl restart affiliate-studio`.
-
-### Mencabut kunci dari VPS
-
-```bash
-sudo sed -i '/^LLM_API_KEY=/d' /opt/affiliate-studio/.env
-sudo systemctl restart affiliate-studio
-```
+Batas laju tetap berlaku di jalur proksi (60 permintaan / 10 menit per IP,
+dibaca dari `X-Real-IP` yang diisi Caddy). Tanpa `LLM_UPSTREAM`, batas itu
+tidak dipakai karena tidak ada endpoint LLM di server.
 
 ---
 
