@@ -184,6 +184,47 @@ def read_state(rev=None):
         conn.close()
 
 
+def ai_key_slots(state):
+    """Ambil semua ai.<provider>.key dari sebuah state."""
+    out = {}
+    ai = state.get("ai") if isinstance(state, dict) else None
+    if isinstance(ai, dict):
+        for name, cfg in ai.items():
+            if isinstance(cfg, dict) and isinstance(cfg.get("key"), str):
+                out[name] = cfg["key"]
+    return out
+
+
+def redact_ai_keys(state):
+    """Kosongkan ai.*.key sebelum state dikirim ke klien non-lokal.
+
+    Tanpa ini, siapa pun yang membuka /api/state bisa membaca API key yang
+    tersimpan di database — cukup dengan curl, tanpa perlu membuka aplikasi.
+    """
+    ai = state.get("ai") if isinstance(state, dict) else None
+    if isinstance(ai, dict):
+        for cfg in ai.values():
+            if isinstance(cfg, dict) and cfg.get("key"):
+                cfg["key"] = ""
+    return state
+
+
+def restore_ai_keys(state, saved):
+    """Kembalikan kunci lama ke state kiriman klien jarak jauh.
+
+    Klien jarak jauh tidak pernah menerima kunci, jadi state yang dikirim
+    baliknya berisi key kosong. Kalau ditulis apa adanya, satu klik "simpan"
+    dari pengunjung akan menghapus kunci milik pemilik aplikasi.
+    """
+    ai = state.get("ai") if isinstance(state, dict) else None
+    if not isinstance(ai, dict):
+        return state
+    for name, cfg in ai.items():
+        if isinstance(cfg, dict):
+            cfg["key"] = saved.get(name, "")
+    return state
+
+
 def write_state(body_text):
     """Simpan state baru. Mengembalikan (rev, bytes, snapshot_dibuat)."""
     conn = db()
@@ -519,6 +560,14 @@ class Handler(SimpleHTTPRequestHandler):
         u = urlparse(self.path)
         return u.path, parse_qs(u.query)
 
+    def _is_local(self):
+        """True kalau permintaan datang dari mesin ini sendiri (bukan lewat Caddy).
+
+        Dipakai untuk memutuskan boleh tidaknya API key ikut terkirim: di laptop
+        pemilik aplikasi itu wajar, di alamat publik tidak.
+        """
+        return self._client_ip() in ("127.0.0.1", "::1", "localhost")
+
     def _client_ip(self):
         # Di belakang Caddy semua permintaan datang dari 127.0.0.1, jadi alamat
         # asli dibaca dari X-Real-IP yang diisi Caddyfile.
@@ -714,8 +763,13 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json({"error": "rev harus angka"}, 400)
                 if got is None:
                     return self._json({"error": "revisi tidak ditemukan"}, 404)
-                return self._json(got)
-            return self._json(read_state())
+            else:
+                got = read_state()
+            # Kunci LLM tidak pernah keluar dari mesin ini. Dari localhost tetap
+            # terkirim (pemilik aplikasi butuh); lewat alamat publik diredaksi.
+            if got.get("state") and not self._is_local():
+                redact_ai_keys(got["state"])
+            return self._json(got)
         if path == "/api/history":
             try:
                 limit = int(qs.get("limit", ["20"])[0])
@@ -772,13 +826,20 @@ class Handler(SimpleHTTPRequestHandler):
 
         body_text = json.dumps(state, ensure_ascii=False)
         with _lock:
-            cur = read_state()["rev"]
+            cur_state = read_state()
+            cur = cur_state["rev"]
             if isinstance(base, int) and base != cur:
                 return self._json(
                     {"error": "konflik", "rev": cur, "baseRev": base,
                      "message": "data sudah diubah pihak lain sejak terakhir dibaca"},
                     409,
                 )
+            # Klien jarak jauh tidak pernah menerima kunci, jadi state yang
+            # dikirim baliknya berisi key kosong. Tanpa ini, satu klik simpan
+            # dari pengunjung akan menghapus kunci milik pemilik aplikasi.
+            if not self._is_local():
+                restore_ai_keys(state, ai_key_slots(cur_state["state"] or {}))
+                body_text = json.dumps(state, ensure_ascii=False)
             rev, size, made = write_state(body_text)
         return self._json({"ok": True, "rev": rev, "bytes": size, "snapshot": made})
 

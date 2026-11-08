@@ -4868,29 +4868,36 @@ function aiCard() {
         tidak pernah tertukar. Bank kalimat di kartu bawah dipakai sebagai <b>contoh nada bicara</b>.
       </div>
 
+      ${SERVER_LLM ? `<div class="hint mt14" style="border-color:#b8d4f0">
+        <b>LLM diurus server.</b> Model <code>${esc(SERVER_LLM.model || '-')}</code> dipanggil lewat
+        <code>/api/llm</code>, dan API key-nya disimpan di berkas <code>.env</code> di server —
+        tidak pernah dikirim ke browser. Kolom di bawah sengaja dimatikan selama mode ini aktif;
+        mengisinya tidak akan berpengaruh apa pun.
+      </div>` : ''}
+
       <div class="grid-2">
         <div class="field">
           <div class="field-label"><span>Provider</span></div>
-          <select class="select" data-ai="provider" style="max-width:none;width:100%">
+          <select class="select" data-ai="provider" style="max-width:none;width:100%"${SERVER_LLM ? ' disabled' : ''}>
             ${Object.keys(AI_PRESETS).map((k) => `<option value="${k}"${k === c.provider ? ' selected' : ''}>${AI_PRESETS[k].label}</option>`).join('')}
           </select>
         </div>
 
         <div class="field">
           <div class="field-label"><span>Model</span></div>
-          <input class="input" data-ai="model" value="${esc(c.model)}" list="aim-text" placeholder="nama model">
+          <input class="input" data-ai="model" value="${esc(c.model)}" list="aim-text" placeholder="nama model"${SERVER_LLM ? ' disabled' : ''}>
           <datalist id="aim-text">${(preset.models || []).map((m) => `<option value="${esc(m)}"></option>`).join('')}</datalist>
         </div>
       </div>
 
       <div class="field mt14">
         <div class="field-label"><span>API key</span></div>
-        <input class="input" type="password" data-ai="key" value="${esc(c.key)}" placeholder="tempel API key" autocomplete="off">
+        <input class="input" type="password" data-ai="key" value="${esc(c.key)}" placeholder="${SERVER_LLM ? 'diurus server — tidak perlu diisi' : 'tempel API key'}" autocomplete="off"${SERVER_LLM ? ' disabled' : ''}>
       </div>
 
       <div class="field mt14">
         <div class="field-label"><span>Base URL <span class="tiny muted">— opsional, isi kalau lewat proxy</span></span></div>
-        <input class="input" data-ai="baseUrl" value="${esc(c.baseUrl)}" placeholder="${esc(preset.base || 'https://proxy-kamu.dev')}">
+        <input class="input" data-ai="baseUrl" value="${esc(c.baseUrl)}" placeholder="${esc(preset.base || 'https://proxy-kamu.dev')}"${SERVER_LLM ? ' disabled' : ''}>
         ${/localhost|\[::1\]/i.test(c.baseUrl || '')
           ? `<div class="tiny muted mt8">Otomatis dipanggil sebagai <code>${esc(normalizeBase(c.baseUrl))}</code> — Chrome sering resolve <code>localhost</code> ke IPv6 (<code>::1</code>) padahal proxy lokal cuma listen di IPv4.</div>`
           : `<div class="tiny muted mt8">Diisi = lewat proxy (OpenAI-compatible). Kosong = langsung ke provider resmi.</div>`}
@@ -4906,11 +4913,14 @@ function aiCard() {
         tombol Generate dimatikan supaya tidak ada konten yang dibuat tanpa LLM.
       </div>`}
 
-      <div class="hint warn mt14">
-        API key ikut tersimpan di <code>data/affiliate.db</code> dan tetap terkirim dari browser saat generate.
-        Aman untuk dipakai sendiri di laptop pribadi. Kalau app ini mau di-hosting atau dipakai orang lain,
-        isi <b>Base URL</b> ke proxy milikmu supaya key tidak ikut terkirim dari browser.
-      </div>
+      ${SERVER_LLM ? `<div class="hint mt14">
+        Tidak ada API key di browser maupun di database untuk mode ini. Yang dipakai adalah
+        <code>LLM_API_KEY</code> di <code>.env</code> server, dibaca hanya oleh proses Python.
+      </div>` : `<div class="hint warn mt14">
+        API key tersimpan di <code>data/affiliate.db</code> dan terkirim dari browser saat generate.
+        Aman untuk laptop pribadi. Kalau app ini di-hosting, kunci diredaksi untuk pengunjung luar,
+        tapi tetap lebih baik mengisi <b>Base URL</b> ke proxy milikmu.
+      </div>`}
       <div class="row mt14">
         <button class="btn btn-primary" data-act="ai-gen" data-pf="threads">Generate Threads</button>
         <button class="btn btn-primary" data-act="ai-gen" data-pf="tiktok">Generate TikTok</button>
