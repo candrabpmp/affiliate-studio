@@ -315,14 +315,15 @@ def extract_capability():
     if not EXTRACT_ENABLED:
         return {"available": False, "mode": "off", "reason": "dimatikan",
                 "note": "Ekstraksi dimatikan lewat SHOPEE_EXTRACT=off."}
+    if os.name != "nt":
+        # Linux = VPS. Diperiksa sebelum keberadaan skrip: di sini skripnya pun
+        # tidak dipasang, tapi sebab sebenarnya bukan itu — ekstraktor butuh
+        # Chrome desktop dan IP non-datacenter, dan keduanya tidak ada.
+        return {"available": False, "mode": "scrape", "reason": "ip datacenter",
+                "note": "Server berjalan di IP datacenter; Shopee menolak halaman produk dari alamat itu."}
     if not (ROOT / "scripts" / "extract_batch.py").exists():
         return {"available": False, "mode": "scrape", "reason": "skrip tidak ada",
                 "note": "scripts/extract_batch.py tidak ditemukan di server ini."}
-    if os.name != "nt":
-        # Linux = VPS. Bukan soal sistem operasi, tapi soal siapa yang membuka
-        # halaman: ekstraktor butuh Chrome desktop dan IP non-datacenter.
-        return {"available": False, "mode": "scrape", "reason": "ip datacenter",
-                "note": "Server berjalan di IP datacenter; Shopee menolak halaman produk dari alamat itu."}
     return {"available": True, "mode": "scrape", "reason": "",
             "note": "Ekstraksi lewat Chrome di mesin ini."}
 
