@@ -2000,6 +2000,38 @@ const AI_PRESETS = {
    dan tidak ada lagi toggle "pakai LLM": generate selalu lewat LLM. */
 const AI_DEFAULT = { provider: 'gemini', model: 'gemini-2.5-flash', key: '', baseUrl: '', temp: 0.9 };
 
+/* ---------------- override LLM di komputer ini ----------------
+   Kenapa ada: jalur VPS -> tunnel -> laptop bisa putus, dan permintaan LLM
+   adalah yang paling lama menggantung di jalur itu. Kalau aplikasi dibuka dari
+   laptop yang menjalankan gateway, browser bisa memanggil gateway lewat
+   127.0.0.1 langsung — tidak melewati VPS sama sekali.
+
+   Disimpan di localStorage, BUKAN di database: kunci ini milik komputer ini.
+   Kalau ditulis ke state, ia akan terkirim ke server dan (sebelum redaksi)
+   terbaca pengunjung lain. Setelan ini juga tidak pernah menimpa data server —
+   ia hanya lapisan pertama di aiCfg(). */
+const LS_LLM = 'afiliasi.llm.v1';
+const LS_SKIP = 'afiliasi.llm.setup-skip';
+
+function lsLlmGet() {
+  try {
+    const j = JSON.parse(localStorage.getItem(LS_LLM) || 'null');
+    return j && typeof j === 'object' ? j : null;
+  } catch (e) { return null; }
+}
+
+function lsLlmSet(v) {
+  try {
+    if (v) localStorage.setItem(LS_LLM, JSON.stringify(v));
+    else localStorage.removeItem(LS_LLM);
+  } catch (e) { /* mode privat / storage penuh: jalan terus tanpa simpan */ }
+}
+
+function lsLlmActive() {
+  const j = lsLlmGet();
+  return !!(j && j.enabled && String(j.baseUrl || '').trim());
+}
+
 const DEFAULT_SETTINGS = {
   mode: 'simulasi',
   failRate: 20,
@@ -4115,6 +4147,20 @@ function aiCfg() {
   delete A.text.on;          // toggle "pakai LLM" sudah dihapus
   delete A.threads; delete A.tiktok;
 
+  // 1. Override lokal menang — hanya kalau user menyalakannya sendiri di
+  //    Pengaturan. Ini jalur darurat saat tunnel VPS->laptop bermasalah.
+  if (lsLlmActive()) {
+    const j = lsLlmGet();
+    return {
+      ...A.text,
+      provider: j.provider || A.text.provider,
+      baseUrl: String(j.baseUrl).trim(),
+      key: j.key || '',
+      model: j.model || A.text.model
+    };
+  }
+
+  // 2. Mode server: key diurus .env VPS, browser tidak menyimpan apa pun.
   // baseUrl harus absolut: normalizeBase() menambahkan "http://" pada path
   // relatif, sehingga '/api/llm' akan menjadi 'http:///api/llm'.
   if (SERVER_LLM && SERVER_LLM.configured) {
@@ -4930,6 +4976,128 @@ function aiCard() {
   </div>`;
 }
 
+/* ---- kartu LLM lokal (setelan ada di browser, bukan di database) ---- */
+function llmLokalCard() {
+  const j = lsLlmGet() || {};
+  const on = lsLlmActive();
+  const base = j.baseUrl || 'http://127.0.0.1:20128/v1';
+  const model = j.model || 'ag/gemini-3.8-flash-low';
+  return `
+  <div class="card mb14">
+    <div class="card-head">
+      <h3>LLM di komputer ini</h3>
+      <span class="badge ${on ? 'b-ok' : ''}">${on ? 'aktif — server dilewati' : 'tidak aktif'}</span>
+    </div>
+    <div class="card-body">
+      <div class="hint mb14">
+        Jalur darurat kalau <b>VPS → laptop</b> bermasalah. Browser memanggil gateway lewat
+        <code>127.0.0.1</code> langsung, jadi permintaan LLM <b>tidak melewati VPS maupun tunnel</b>.
+        Setelan ini tinggal di browser ini saja (localStorage): tidak masuk database, tidak terlihat
+        pengunjung lain, dan hanya berfungsi di komputer yang benar-benar menjalankan gateway.
+      </div>
+      <div class="row mb14">
+        <label class="chk"><input type="checkbox" ${on ? 'checked' : ''} data-act="ls-llm-toggle"> Pakai LLM di komputer ini</label>
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <div class="field-label"><span>Base URL</span></div>
+          <input class="input" data-ls="baseUrl" value="${esc(base)}"${on ? '' : ' disabled'}>
+        </div>
+        <div class="field">
+          <div class="field-label"><span>Model</span></div>
+          <input class="input" data-ls="model" value="${esc(model)}"${on ? '' : ' disabled'}>
+        </div>
+      </div>
+      <div class="field mt14">
+        <div class="field-label"><span>API key</span></div>
+        <input class="input" type="password" data-ls="key" value="${esc(j.key || '')}" placeholder="key gateway lokal" autocomplete="off"${on ? '' : ' disabled'}>
+      </div>
+      <div class="row mt14">
+        <button class="btn btn-sm" data-act="ls-llm-test"${on ? '' : ' disabled'}>Tes koneksi</button>
+        <button class="btn btn-sm" data-act="ls-llm-clear"${on ? '' : ' disabled'}>Hapus setelan lokal</button>
+        <span class="tiny muted" data-lstest></span>
+      </div>
+      ${on ? `<div class="hint mt14">
+        Chrome 142+ menampilkan izin <b>“akses jaringan lokal”</b> saat pertama kali dipakai — pilih
+        <b>Allow</b>. Tanpa izin itu permintaannya diblokir, dan halaman ini tidak bisa menembusnya.
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+
+async function testLlmLokal() {
+  const box = document.querySelector('[data-lstest]');
+  const j = lsLlmGet() || {};
+  const base = String(j.baseUrl || '').trim().replace(/\/+$/, '');
+  if (!base) { if (box) box.textContent = 'Base URL belum diisi.'; return; }
+  if (box) box.textContent = 'menguji…';
+  try {
+    const r = await fetch(base + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(j.key ? { Authorization: 'Bearer ' + j.key } : {})
+      },
+      body: JSON.stringify({
+        model: j.model || 'ag/gemini-3.8-flash-low',
+        messages: [{ role: 'user', content: 'Balas satu kata: siap' }],
+        max_tokens: 16,
+        stream: false
+      })
+    });
+    if (!r.ok) { if (box) box.textContent = 'Gagal: HTTP ' + r.status; return; }
+    const d = await r.json();
+    const m = ((d.choices || [])[0] || {}).message || {};
+    if (box) box.textContent = 'Tersambung — balasan: ' + JSON.stringify(String(m.content || '').slice(0, 40));
+  } catch (e) {
+    if (box) box.textContent = 'Gagal: ' + ((e && e.message) || e) + ' — kemungkinan izin “akses jaringan lokal” belum diberikan.';
+  }
+}
+
+/* Muncul hanya kalau tidak ada LLM sama sekali: server tidak punya, browser
+   juga belum. Pengunjung VPS tidak akan pernah melihatnya karena di sana
+   mode server sudah aktif. */
+function openLlmSetup() {
+  openModal(`
+    <div class="modal-head">
+      <div><h3>LLM belum disiapkan</h3><p>Tidak ada LLM di server, dan browser ini belum punya setelan.</p></div>
+      <button class="x" data-close="1">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint mb14">
+        Isi gateway yang bisa dijangkau <b>komputer ini</b> — misalnya
+        <code>http://127.0.0.1:20128/v1</code>. Disimpan di browser ini saja, tidak dikirim ke server.
+        Boleh dilewati; aplikasi tetap bisa dijelajahi, hanya tombol Generate yang mati.
+      </div>
+      <div class="field">
+        <div class="field-label"><span>Base URL</span></div>
+        <input class="input" id="setup-base" value="http://127.0.0.1:20128/v1">
+      </div>
+      <div class="field mt14">
+        <div class="field-label"><span>API key <span class="tiny muted">— kosongkan kalau gateway tidak meminta</span></span></div>
+        <input class="input" type="password" id="setup-key" placeholder="key gateway" autocomplete="off">
+      </div>
+      <div class="field mt14">
+        <div class="field-label"><span>Model</span></div>
+        <input class="input" id="setup-model" value="ag/gemini-3.8-flash-low">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-act="llm-setup-skip">Nanti saja</button>
+      <button class="btn btn-primary" data-act="llm-setup-save">Simpan di browser ini</button>
+    </div>`);
+}
+
+function maybeLlmSetup() {
+  if (SERVER_LLM || lsLlmActive()) return;
+  // Jangan menagih kalau database sudah punya kunci: itu artinya sudah diisi
+  // lewat Pengaturan, dan popup hanya akan mengganggu.
+  const c = aiCfg();
+  if (c && c.key) return;
+  try { if (sessionStorage.getItem(LS_SKIP)) return; } catch (e) { /* abaikan */ }
+  openLlmSetup();
+}
+
 /* ---- editor prompt & bank kalimat plot ---- */
 function overridesFor(cat) { return (S.copy && S.copy[cat]) || {}; }
 
@@ -5065,6 +5233,7 @@ function viewPengaturan() {
   return `
   ${cfgFileCard()}
   ${aiCard()}
+  ${llmLokalCard()}
   ${copyEditorCard()}
   <div class="grid-2">
     <div class="stack">
@@ -5449,6 +5618,43 @@ function openProgress(steps) {
 }
 
 const ACTIONS = {
+  /* ---- LLM lokal (localStorage) ---- */
+  'ls-llm-toggle'(el) {
+    const j = lsLlmGet() || {};
+    j.enabled = !!el.checked;
+    if (!j.baseUrl) j.baseUrl = 'http://127.0.0.1:20128/v1';
+    if (!j.model) j.model = 'ag/gemini-3.8-flash-low';
+    lsLlmSet(j);
+    render();
+    log('info', j.enabled
+      ? 'LLM lokal aktif — permintaan langsung ke gateway, tidak lewat VPS'
+      : 'LLM lokal dimatikan — kembali ke setelan server');
+  },
+
+  'ls-llm-test'() { testLlmLokal(); },
+
+  'ls-llm-clear'() {
+    lsLlmSet(null);
+    render();
+    log('info', 'Setelan LLM lokal dihapus dari browser ini');
+  },
+
+  'llm-setup-save'() {
+    const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const baseUrl = val('setup-base');
+    if (!baseUrl) { log('warn', 'Base URL belum diisi — penyiapan dibatalkan'); return; }
+    lsLlmSet({ enabled: true, baseUrl, key: val('setup-key'), model: val('setup-model') || 'ag/gemini-3.8-flash-low' });
+    closeModal();
+    render();
+    log('info', 'LLM lokal disimpan di browser ini — permintaan tidak lewat VPS');
+  },
+
+  'llm-setup-skip'() {
+    try { sessionStorage.setItem(LS_SKIP, '1'); } catch (e) { /* abaikan */ }
+    closeModal();
+    log('info', 'Penyiapan LLM dilewati — Generate dimatikan sampai diisi');
+  },
+
   nav(el) { S.ui.view = el.dataset.view; save(); render(); window.scrollTo(0, 0); },
 
   tab(el) { S.ui.reviewTab = el.dataset.pf; S.ui.reviewFilter = 'semua'; save(); render(); },
@@ -6976,6 +7182,15 @@ document.addEventListener('toggle', (e) => {
 document.addEventListener('input', (e) => {
   const t = e.target;
 
+  /* setelan LLM lokal: tinggal di browser, jadi TIDAK memanggil save()
+     (save() menulis ke database server). */
+  if (t.matches('[data-ls]')) {
+    const j = lsLlmGet() || { enabled: true };
+    j[t.dataset.ls] = t.value;
+    lsLlmSet(j);
+    return;
+  }
+
   if (t.matches('[data-ai]')) {
     const field = t.dataset.ai;
     const c = aiCfg();
@@ -7138,5 +7353,5 @@ setInterval(() => {
 /* ---------------- init ---------------- */
 if (SEED_NOTE) log('info', SEED_NOTE);
 render();              // tampilkan layar "menghubungkan…" dulu
-probeServerLlm();      // tanya apakah key LLM diurus server (VPS)
+probeServerLlm().then(maybeLlmSetup);   // tanya apakah key LLM diurus server (VPS)
 initStore();           // lalu ambil state dari database; tanpa fallback lokal
