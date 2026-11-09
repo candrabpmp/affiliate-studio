@@ -4167,8 +4167,22 @@ function aiCfg() {
   delete A.text.on;          // toggle "pakai LLM" sudah dihapus
   delete A.threads; delete A.tiktok;
 
-  // 1. Override lokal menang — hanya kalau user menyalakannya sendiri di
-  //    Pengaturan. Ini jalur darurat saat tunnel VPS->laptop bermasalah.
+  // 1. Mode server: satu key di .env VPS, dipakai semua pengunjung.
+  //    Ini yang utama — setelan di browser tidak boleh menimpanya, karena
+  //    pengunjung tidak seharusnya perlu mengurus key sendiri.
+  //    baseUrl harus absolut: normalizeBase() menambahkan "http://" pada path
+  //    relatif, sehingga '/api/llm' akan menjadi 'http:///api/llm'.
+  if (SERVER_LLM && SERVER_LLM.configured) {
+    return {
+      ...A.text,
+      baseUrl: location.origin + (SERVER_LLM.basePath || '/api/llm'),
+      key: '',
+      model: SERVER_LLM.model || A.text.model
+    };
+  }
+
+  // 2. Tanpa LLM server (mis. localhost dengan gateway sendiri): pakai setelan
+  //    yang disimpan di browser ini.
   if (lsLlmActive()) {
     const j = lsLlmGet();
     return {
@@ -4177,18 +4191,6 @@ function aiCfg() {
       baseUrl: String(j.baseUrl).trim(),
       key: j.key || '',
       model: j.model || A.text.model
-    };
-  }
-
-  // 2. Mode server: key diurus .env VPS, browser tidak menyimpan apa pun.
-  // baseUrl harus absolut: normalizeBase() menambahkan "http://" pada path
-  // relatif, sehingga '/api/llm' akan menjadi 'http:///api/llm'.
-  if (SERVER_LLM && SERVER_LLM.configured) {
-    return {
-      ...A.text,
-      baseUrl: location.origin + (SERVER_LLM.basePath || '/api/llm'),
-      key: '',
-      model: SERVER_LLM.model || A.text.model
     };
   }
   return A.text;
@@ -4960,7 +4962,7 @@ function aiCard() {
       <span class="badge ${ready ? 'b-ok' : ''}">${ready ? 'siap dipakai' : 'belum diisi'}</span>
     </div>
     <div class="card-body">
-      ${lsLlmActive() ? `<div class="hint warn mb14">
+      ${!(SERVER_LLM && SERVER_LLM.configured) && lsLlmActive() ? `<div class="hint warn mb14">
         <b>Tidak dipakai.</b> Browser ini sedang memakai setelan <b>“LLM di komputer ini”</b>.
         Matikan di kartu bawah kalau ingin kembali ke setelan ini.
       </div>` : ''}
@@ -5034,6 +5036,10 @@ function aiCard() {
 
 /* ---- kartu LLM lokal (setelan ada di browser, bukan di database) ---- */
 function llmLokalCard() {
+  /* Kalau server sudah menyediakan LLM, kartu ini tidak ditampilkan sama
+     sekali. Menyimpan key di localStorage terbukti tidak stabil antar
+     browser, dan pengunjung tidak seharusnya mengurus key sendiri. */
+  if (SERVER_LLM && SERVER_LLM.configured) return '';
   const j = lsLlmGet() || {};
   const on = lsLlmActive();
   const base = j.baseUrl || 'http://127.0.0.1:20128/v1';
@@ -5333,6 +5339,9 @@ function openLlmSetup() {
 }
 
 function maybeLlmSetup() {
+  /* Server sudah punya LLM sendiri: pengunjung tidak perlu mengisi apa pun.
+     Ini yang membuat juri bisa langsung memakai aplikasi. */
+  if (SERVER_LLM && SERVER_LLM.configured) return;
   if (lsLlmActive()) return;                 // browser ini sudah punya setelan
   const c = aiCfg();
   if (c && c.key) return;                    // database sudah menyimpan kunci

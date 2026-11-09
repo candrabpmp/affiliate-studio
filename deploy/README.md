@@ -109,51 +109,44 @@ alamatnya publik. Semua sudah diuji ulang (lihat `server.py`):
 
 ---
 
-## LLM: pengunjung membawa key sendiri
+## LLM: satu key di server, dipakai semua pengunjung
 
-**Keputusan akhir.** Server **tidak** menyimpan kunci LLM, dan tidak memproksi
-permintaan LLM. Setiap pengunjung mengisi endpoint OpenAI-compatible miliknya
-sendiri; setelan itu tinggal di localStorage browser masing-masing.
+**Keputusan akhir.** API key LLM disimpan di `/opt/affiliate-studio/.env` dan
+tidak pernah dikirim ke browser. Browser memanggil `/api/llm/chat/completions`
+tanpa key; server yang menyisipkan key saat meneruskan ke penyedia.
 
 ```
-pengunjung ──▶ popup "Pakai LLM kamu sendiri" ──▶ tes koneksi ──▶ simpan di browser
-                                                                        │
-                                      semua request Planner/Writer/Reviewer
-                                                                        ▼
-                                                     penyedia pilihan pengunjung
+pengunjung ──▶ /api/llm/chat/completions ──▶ server (sisipkan key) ──▶ penyedia
+                        ▲                                              │
+                        └────────── balasan OpenAI-compatible ─────────┘
 ```
 
-Kenapa begitu: sebelumnya LLM diproksi lewat VPS → tunnel → gateway di laptop
-pemilik. Jalur itu rapuh (laptop tidur, Wi-Fi putus) dan membuat penjurian
-bergantung pada satu mesin. Dengan key masing-masing, laptop pemilik keluar
-dari jalur sepenuhnya.
+Kenapa berubah: menyimpan key di `localStorage` ternyata tidak stabil antar
+browser — setelan hilang, key tidak terbaca, tiap browser harus diisi ulang.
+Sekarang pengunjung membuka halaman dan langsung bisa menekan Generate.
 
 | Yang perlu diketahui | Keterangan |
 |---|---|
-| Key disimpan di | `localStorage` browser pengunjung, kunci `afiliasi.llm.v1` |
-| Key dikirim ke server? | Tidak. `PUT /api/state` tidak pernah memuatnya |
-| Pengunjung tanpa key | Boleh melewati popup; data demo & jadwal tetap bisa dilihat, tombol Generate mati |
-| Endpoint lokal (`localhost`, Ollama, LM Studio) | **Tidak bisa** dari halaman HTTPS — Chrome memblokir halaman publik yang memanggil jaringan lokal (Local Network Access) |
-| Penyedia yang diuji CORS-nya | OpenAI, OpenRouter, Groq, DeepSeek, Anthropic — semuanya mengizinkan |
+| Key disimpan di | `/opt/affiliate-studio/.env` (root, mode 600), dibaca systemd |
+| Key sampai ke browser? | Tidak. `/api/llm/status` hanya menjawab `configured` + nama model |
+| Pengunjung perlu mengisi? | Tidak. Popup key tidak muncul selama server terkonfigurasi |
+| Batas laju | `LLM_RATE_PER_10MIN` per IP (dibaca dari `X-Real-IP` Caddy) |
+| Setelan lama di browser | Diabaikan; kartu "LLM di komputer ini" tidak dirender |
 
-`LLM_UPSTREAM` dan `LLM_API_KEY` sudah **dihapus** dari `.env` di VPS. Kode
-proksi `/api/llm` masih ada dan tidak mengganggu: tanpa `LLM_UPSTREAM`,
-`/api/llm/status` menjawab `configured:false` dan endpoint-nya 503.
+### Cara memasang / mengganti
 
-### Kalau nanti ingin memproksi lagi
+Isi `_deploy/llm-server.txt` (tidak ikut git), lalu:
 
-Isi ulang `.env`, lalu `systemctl restart affiliate-studio`:
-
-```
-LLM_UPSTREAM=https://<endpoint-openai-compatible>/v1
-LLM_API_KEY=<kunci>
-LLM_MODEL=<nama model>
-LLM_RATE_PER_10MIN=60
+```bash
+python scripts/set-llm-server.py          # tulis .env + restart + uji nyata
+python scripts/set-llm-server.py --cek    # hanya uji yang sedang terpasang
+python scripts/set-llm-server.py --hapus  # matikan, kembali ke setelan browser
 ```
 
-Batas laju tetap berlaku di jalur proksi (60 permintaan / 10 menit per IP,
-dibaca dari `X-Real-IP` yang diisi Caddy). Tanpa `LLM_UPSTREAM`, batas itu
-tidak dipakai karena tidak ada endpoint LLM di server.
+Skrip menulis `LLM_UPSTREAM`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_RATE_PER_10MIN`
+ke `.env` tanpa menyentuh variabel lain, menjalankan ulang layanan, lalu
+menguji satu permintaan lewat `https://.../api/llm/chat/completions` — bukan
+sekadar memeriksa `.env` terbaca. Key tidak pernah dicetak.
 
 ---
 
