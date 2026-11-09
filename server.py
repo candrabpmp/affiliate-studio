@@ -123,6 +123,13 @@ LLM_API_KEY = (os.environ.get("LLM_API_KEY") or "").strip()
 LLM_MODEL = (os.environ.get("LLM_MODEL") or "").strip()
 LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "180"))
 LLM_RATE = int(os.environ.get("LLM_RATE_PER_10MIN", "60"))   # per IP / 10 menit
+# Model reasoning (deepseek-v4-flash, o-series, ds-r1) menghabiskan token untuk
+# reasoning_content sebelum menulis jawaban. Dengan batas 8192, satu permintaan
+# Writer bisa habis seluruhnya untuk berpikir: finish_reason "length", content
+# kosong. Dua variabel ini menyuntikkan penyesuaian di sisi server supaya klien
+# tidak perlu tahu model apa yang dipakai.
+LLM_REASONING_EFFORT = (os.environ.get("LLM_REASONING_EFFORT") or "").strip()
+LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "0") or 0)
 
 _llm_hits = {}
 _llm_lock = threading.Lock()
@@ -628,6 +635,20 @@ class Handler(SimpleHTTPRequestHandler):
         if length > 1024 * 1024:                  # prompt kita jauh di bawah ini
             return self._json({"error": "body terlalu besar"}, 413)
         body = self.rfile.read(length) if length else b""
+
+        if (LLM_REASONING_EFFORT or LLM_MAX_TOKENS) and body:
+            try:
+                obj = json.loads(body.decode("utf-8"))
+            except Exception:
+                obj = None
+            if isinstance(obj, dict):
+                if LLM_REASONING_EFFORT:
+                    obj["reasoning_effort"] = LLM_REASONING_EFFORT
+                if LLM_MAX_TOKENS:
+                    cur = obj.get("max_tokens")
+                    if not isinstance(cur, int) or cur < LLM_MAX_TOKENS:
+                        obj["max_tokens"] = LLM_MAX_TOKENS
+                body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
 
         url = LLM_UPSTREAM + path[len("/api/llm"):]
         req = urllib.request.Request(url, data=body, method="POST")

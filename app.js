@@ -4396,7 +4396,11 @@ async function callOpenAI(cfg, system, user, signal) {
       model: cfg.model,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       temperature: Number(cfg.temp) || 0.9,
-      max_tokens: 4096,
+      /* 8192, bukan 4096: model reasoning (mis. deepseek-v4-flash)
+         menghabiskan token untuk reasoning_content lebih dulu. Dengan
+         4096 seluruh jatah habis sebelum satu kata jawaban keluar —
+         finish_reason "length", content kosong. */
+      max_tokens: Number(cfg.maxTokens) || 8192,
       stream: false
     })
   });
@@ -4410,8 +4414,13 @@ async function callOpenAI(cfg, system, user, signal) {
   const text = pickText(data, sse, raw);
   if (!text) {
     const fr = ch.finish_reason || (data && data.finish_reason) || (sse && sse.finish) || '';
-    throw new Error('Model balas tanpa teks' + (fr ? ' (finish_reason: ' + fr + ')' : '')
-      + ' · balasan mentah: ' + (rawSnippet(raw, 200) || '(body kosong)'));
+    const habis = fr === 'length';
+    throw new Error(habis
+      ? 'Model kehabisan token sebelum menulis jawaban (finish_reason: length) — '
+        + 'model reasoning memakai jatah untuk berpikir lebih dulu. Naikkan max_tokens '
+        + 'atau pakai model non-reasoning.'
+      : 'Model balas tanpa teks' + (fr ? ' (finish_reason: ' + fr + ')' : '')
+        + ' · balasan mentah: ' + (rawSnippet(raw, 200) || '(body kosong)'));
   }
   return text;
 }
@@ -4805,7 +4814,7 @@ async function llmThreads(item, opts) {
     r.posts.every((p) => p.length >= POST_MIN_CHARS && p.length <= POST_MAX_CHARS);
   const score = (r) => (!r ? -1 : (fits(r) ? 100000 : 0) + Math.min.apply(null, r.posts.map((p) => p.length)));
 
-  const first = attempt(await callLLM(cfg, sys(), usr(), 150000));
+  const first = attempt(await callLLM(cfg, sys(), usr(), 300000));
   if (!first) throw new Error('Model tidak mengirim teks yang bisa dipakai');
   if (fits(first)) return first.posts.map((p) => trimEmoji(p, 2));
 

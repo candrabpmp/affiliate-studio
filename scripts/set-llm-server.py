@@ -64,15 +64,57 @@ def baca_env_lama():
     return "\n".join(simpan).strip()
 
 
+def _coba_models(base, key):
+    """GET {base}/models dengan key. Dipakai hanya untuk menebak letak /v1."""
+    req = urllib.request.Request(base.rstrip("/") + "/models",
+                                 headers={"Authorization": "Bearer " + key})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.load(r)
+            ids = d.get("data") if isinstance(d, dict) else d
+            return r.status, len(ids or [])
+    except urllib.error.HTTPError as e:
+        return e.code, 0
+    except Exception:
+        return 0, 0
+
+
+def normalisasi_base(base, key):
+    """Terima BASE_URL dengan atau tanpa /v1.
+
+    Banyak orang menulis https://penyedia.com padahal endpoint-nya di
+    https://penyedia.com/v1. Daripada gagal dengan 404 yang membingungkan,
+    letak /v1 ditebak lewat /models — endpoint paling murah untuk itu.
+    """
+    base = base.rstrip("/")
+    if re.search(r"/v\d+[a-z]*(/openai)?$", base):
+        return base
+    kode, _ = _coba_models(base, key)
+    if kode == 200:
+        return base
+    kode2, jumlah = _coba_models(base + "/v1", key)
+    if kode2 == 200:
+        print("BASE_URL %s tidak menjawab /models; memakai %s/v1 (%d model)"
+              % (base, base, jumlah))
+        return base + "/v1"
+    return base
+
+
 def tulis_env(lama, nilai):
     baru = {
         "LLM_UPSTREAM": nilai.get("BASE_URL", "").rstrip("/"),
         "LLM_API_KEY": nilai.get("API_KEY", ""),
         "LLM_MODEL": nilai.get("MODEL", ""),
         "LLM_RATE_PER_10MIN": nilai.get("RATE_PER_10MIN", "200") or "200",
+        # model reasoning bisa berpikir beberapa menit; proxy harus menunggu
+        # lebih lama daripada klien (writer 300 dtk) supaya galatnya jelas.
+        "LLM_TIMEOUT": "300",
+        # model reasoning: batasi "berpikir" dan beri ruang jawaban
+        "LLM_REASONING_EFFORT": nilai.get("REASONING_EFFORT", ""),
+        "LLM_MAX_TOKENS": nilai.get("MAX_TOKENS", ""),
     }
     isi = lama + "\n\n# --- LLM server (dipasang oleh scripts/set-llm-server.py) ---\n"
-    isi += "\n".join("%s=%s" % (k, v) for k, v in baru.items()) + "\n"
+    isi += "\n".join("%s=%s" % (k, v) for k, v in baru.items() if v != "") + "\n"
 
     tmp = ROOT / "_deploy" / ".env.baru"
     tmp.write_text(isi, encoding="utf-8", newline="\n")
@@ -163,6 +205,8 @@ def main():
         raise SystemExit("API_KEY belum diisi di _deploy/llm-server.txt")
     if not model:
         raise SystemExit("MODEL belum diisi")
+
+    base = normalisasi_base(base, key)
 
     print("BASE_URL :", base)
     print("API_KEY  : %d karakter (tidak dicetak)" % len(key))

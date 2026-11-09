@@ -277,7 +277,7 @@ async function rbReviewerLLM(pf, item, draft) {
     'Nilai draf di atas. Kalau tidak ada pelanggaran, verdict "lulus" dan violations kosong.'
   ].join('\n');
 
-  const raw = await callLLM(cfg, sys, usr, 90000);
+  const raw = await callLLM(cfg, sys, usr, 180000);
   const o = parseJSONLoose(raw);
   const valid = new Set(rbRulesFor(pf).map((r) => r.id));
   const list = (Array.isArray(o.violations) ? o.violations : []).map((v) => {
@@ -314,7 +314,7 @@ async function rbPlanner(pf, item) {
     'PRODUCT SHEET:',
     rbWriterSource(item).slice(0, 3000)
   ].join('\n');
-  const raw = await callLLM(cfg, sys, usr, 90000);
+  const raw = await callLLM(cfg, sys, usr, 180000);
   const o = parseJSONLoose(raw);
   /* fakta yang mengandung klaim terlarang dibuang di sini, sebelum sempat
      menjadi izin bagi Writer */
