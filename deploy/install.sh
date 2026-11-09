@@ -15,7 +15,7 @@ APP_DIR=/opt/affiliate-studio
 SERVICE=affiliate-studio
 # Alamat situs bisa diberikan sebagai argumen kedua, karena `sudo VAR=nilai
 # bash ...` tidak selalu meneruskan environment tergantung setelan sudoers.
-SITE_ADDRESS="${2:-${SITE_ADDRESS:-43-128-104-197.sslip.io}}"
+SITE_ADDRESS="${2:-${SITE_ADDRESS:-cpak.my.id}}"
 
 say() { printf "\n\033[1;36m== %s\033[0m\n" "$*"; }
 ok()  { printf "   \033[1;32mok\033[0m %s\n" "$*"; }
@@ -62,16 +62,16 @@ if [ ! -f "$APP_DIR/.env" ]; then
   cat > "$APP_DIR/.env" <<EOF
 AFFILIATE_HOST=127.0.0.1
 AFFILIATE_PORT=8787
-AFFILIATE_ORIGIN=https://$SITE_ADDRESS
+AFFILIATE_ORIGIN=https://$SITE_ADDRESS,https://43-128-104-197.sslip.io
 PYTHONDONTWRITEBYTECODE=1
 EOF
   ok ".env dibuat"
 else
   # pastikan origin mengikuti nama situs yang dipakai
   if grep -q '^AFFILIATE_ORIGIN=' "$APP_DIR/.env"; then
-    sed -i "s|^AFFILIATE_ORIGIN=.*|AFFILIATE_ORIGIN=https://$SITE_ADDRESS|" "$APP_DIR/.env"
+    sed -i "s|^AFFILIATE_ORIGIN=.*|AFFILIATE_ORIGIN=https://$SITE_ADDRESS,https://43-128-104-197.sslip.io|" "$APP_DIR/.env"
   else
-    echo "AFFILIATE_ORIGIN=https://$SITE_ADDRESS" >> "$APP_DIR/.env"
+    echo "AFFILIATE_ORIGIN=https://$SITE_ADDRESS,https://43-128-104-197.sslip.io" >> "$APP_DIR/.env"
   fi
   ok ".env disesuaikan (origin -> https://$SITE_ADDRESS)"
 fi
@@ -107,7 +107,7 @@ else
 fi
 
 # Alamat situs dijadikan harfiah supaya berkas di VPS mudah dibaca.
-sed "s|{\$SITE_ADDRESS:43-128-104-197.sslip.io}|$SITE_ADDRESS|g" \
+sed "s|cpak\.my\.id|$SITE_ADDRESS|g" \
   "$APP_DIR/deploy/Caddyfile" > /etc/caddy/Caddyfile
 if caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
   ok "Caddyfile valid"

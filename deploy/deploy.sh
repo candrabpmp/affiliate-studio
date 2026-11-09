@@ -20,7 +20,7 @@ if [ -z "$TARGET" ]; then
   exit 1
 fi
 
-SITE_ADDRESS="${SITE_ADDRESS:-43-128-104-197.sslip.io}"
+SITE_ADDRESS="${SITE_ADDRESS:-cpak.my.id}"
 cd "$(dirname "$0")/.."
 
 echo "== 1/4 memeriksa koneksi ke $TARGET"

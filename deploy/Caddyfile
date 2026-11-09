@@ -1,21 +1,27 @@
 # =============================================================================
-# Caddy untuk Affiliate Studio di VPS tanpa domain
+# Caddy untuk Affiliate Studio di VPS
 # -----------------------------------------------------------------------------
-# Masalahnya: Let's Encrypt tidak menerbitkan sertifikat untuk alamat IP mentah
-# (belum, untuk publik). Tanpa sertifikat, browser menampilkan "Not secure" dan
-# sebagian juri langsung menutup tab.
+# Dua alamat, satu aplikasi:
 #
-# Solusinya bukan beli domain, tapi memakai sslip.io — DNS publik yang selalu
-# menjawab "<ip-dengan-strip>.sslip.io" dengan IP tersebut. Jadi:
+#   https://cpak.my.id                 domain utama
+#   https://43-128-104-197.sslip.io    alamat lama, tetap hidup
 #
-#     43-128-104-197.sslip.io   ->   43.128.104.197
+# Keduanya memakai potongan (snippet) yang sama, jadi aturan keamanan dan
+# batas waktu unggah tidak bisa berbeda diam-diam antara dua alamat.
 #
-# Nama itu bisa diverifikasi Let's Encrypt lewat HTTP-01 (port 80 kita terbuka),
-# jadi sertifikatnya asli dan diperbarui otomatis. Kalau nanti sudah punya
-# domain sendiri, cukup ganti SITE_ADDRESS di /etc/default/caddy — tidak perlu
-# menyentuh berkas ini.
+# sslip.io dipertahankan karena tautan demo yang sudah beredar memakainya.
+# Menghapusnya akan mematikan tautan itu tanpa memberi keuntungan apa pun.
 #
-# Pasang:  cp deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+# Catatan penerbitan sertifikat:
+#   - Caddy menerbitkan sertifikat per hostname, otomatis, dan memperbaruinya
+#     sendiri. Dua blok = dua sertifikat, tidak saling mengganggu.
+#   - Syaratnya DNS A record sudah menunjuk ke VPS ini sebelum reload. Kalau
+#     belum, ACME gagal dan Caddy mengulang dengan jeda makin panjang.
+#   - Port 80 harus tetap terbuka: dipakai tantangan HTTP-01 dan redirect
+#     otomatis ke HTTPS.
+#
+# Pasang:  sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo caddy validate \
+#            --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 # =============================================================================
 
 {
@@ -23,18 +29,17 @@
 	#
 	# Percobaan pertama memakai placeholder admin@example.com dan Let's Encrypt
 	# menolaknya: "contact email has forbidden domain example.com". Caddy lalu
-	# diam-diam beralih ke ZeroSSL — tetap berhasil, tapi berisik di log dan
-	# membingungkan saat membaca sertifikat yang terbit.
+	# diam-diam beralih ke ZeroSSL — tetap berhasil, tapi berisik di log.
 	#
-	# Tanpa kontak, Let's Encrypt menerima permintaan. Kalau Bos ingin email
+	# Tanpa kontak, Let's Encrypt menerima permintaan. Kalau ingin email
 	# pengingat kedaluwarsa, isi dengan alamat nyata:
 	#   email nama@domainasli.id
 }
 
 # ---------------------------------------------------------------------------
-# Situs utama
+# Potongan bersama — dipakai oleh kedua alamat di bawah
 # ---------------------------------------------------------------------------
-{$SITE_ADDRESS:43-128-104-197.sslip.io} {
+(app) {
 	encode zstd gzip
 
 	# Lapis kedua. server.py sudah menolak semua ini (daftar putih ekstensi),
@@ -62,8 +67,22 @@
 }
 
 # ---------------------------------------------------------------------------
-# Akses lewat IP mentah — dialihkan supaya tidak ada yang tertinggal di HTTP
+# Domain utama
+# ---------------------------------------------------------------------------
+cpak.my.id {
+	import app
+}
+
+# ---------------------------------------------------------------------------
+# Alamat lama — tetap dipertahankan supaya tautan yang sudah beredar hidup
+# ---------------------------------------------------------------------------
+43-128-104-197.sslip.io {
+	import app
+}
+
+# ---------------------------------------------------------------------------
+# Akses lewat IP mentah — dialihkan ke domain utama
 # ---------------------------------------------------------------------------
 http://43.128.104.197 {
-	redir https://{$SITE_ADDRESS:43-128-104-197.sslip.io}{uri} permanent
+	redir https://cpak.my.id{uri} permanent
 }

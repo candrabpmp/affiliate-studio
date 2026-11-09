@@ -1,31 +1,40 @@
-# Deploy ke VPS — tanpa domain
+# Deploy ke VPS
 
-**Status: sudah terpasang dan live → https://43-128-104-197.sslip.io/**
+**Status: live di dua alamat**
+
+- https://cpak.my.id — domain utama
+- https://43-128-104-197.sslip.io — alamat lama, tetap hidup
 
 VPS: `43.128.104.197` · Ubuntu 24.04.4 LTS · Python 3.12.3 · Caddy 2.11.4
 User SSH: `ubuntu` (punya `sudo` tanpa password) — **bukan `root`**
 
 ---
 
-## Kenapa pakai `sslip.io`, bukan IP langsung
+## Dua alamat, satu aplikasi
 
-Let's Encrypt tidak menerbitkan sertifikat untuk alamat IP mentah. Tanpa
-sertifikat, alamat `http://43.128.104.197` akan tampil **"Not secure"** di
-browser — calon juri biasanya langsung menutup tab.
+Caddy melayani dua blok situs dengan potongan (`snippet`) yang sama:
 
-`sslip.io` adalah DNS publik gratis yang selalu menjawab
-`<ip-dengan-strip>.sslip.io` dengan IP tersebut:
+```caddyfile
+(app) { ... }                       # aturan bersama
 
-```
-43-128-104-197.sslip.io   ->   43.128.104.197
+cpak.my.id { import app }           # domain utama
+43-128-104-197.sslip.io { import app }   # alamat lama
 ```
 
-Sudah saya uji, resolve-nya benar. Karena itu nama ini bisa diverifikasi
-Let's Encrypt lewat HTTP-01 (port 80 VPS terbuka), sehingga **sertifikat asli
-dan diperbarui otomatis** — tanpa beli domain, tanpa Cloudflare.
+Keduanya punya sertifikat sendiri (Let's Encrypt, diperbarui otomatis) dan
+berbagi port 80/443. `sslip.io` sengaja dipertahankan: tautan demo yang sudah
+beredar memakainya, dan menghapusnya tidak memberi keuntungan apa pun.
 
-Kalau nanti sudah punya domain sendiri, cukup ganti satu baris di
-`/etc/caddy/Caddyfile` lalu `systemctl reload caddy`.
+**Syarat sebelum reload:** A record domain harus sudah menunjuk ke VPS.
+`cpak.my.id` → `43.128.104.197` (DNS dikelola `ns1/ns2.sumopod.com`, tanpa
+proxy Cloudflare). Kalau DNS belum menjawab, ACME gagal dan Caddy mengulang
+dengan jeda makin panjang — sertifikat tidak akan terbit sampai DNS benar.
+
+`www.cpak.my.id` belum ada A record-nya, jadi belum dimasukkan ke Caddyfile.
+Tambahkan record dulu, baru tambahkan `www.cpak.my.id` di blok domain.
+
+IP mentah `http://43.128.104.197` dialihkan permanen ke domain utama, supaya
+tidak ada yang tertinggal di HTTP.
 
 ---
 

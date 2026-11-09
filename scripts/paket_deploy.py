@@ -58,7 +58,7 @@ ENV_CONTOH = (
     "# Dibaca systemd lewat EnvironmentFile. Jangan commit berkas ini.\n"
     "AFFILIATE_HOST=127.0.0.1\n"
     "AFFILIATE_PORT=8787\n"
-    "AFFILIATE_ORIGIN=https://43-128-104-197.sslip.io\n"
+    "AFFILIATE_ORIGIN=https://cpak.my.id,https://43-128-104-197.sslip.io\n"
     "PYTHONDONTWRITEBYTECODE=1\n"
 )
 
