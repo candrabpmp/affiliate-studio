@@ -74,6 +74,17 @@ cpak.my.id {
 }
 
 # ---------------------------------------------------------------------------
+# www → domain utama
+# ---------------------------------------------------------------------------
+# Dialihkan, bukan dilayani sendiri: satu origin berarti satu setelan browser
+# dan tautan yang tersebar tetap mendarat di alamat yang sama. Sertifikat www
+# tetap perlu terbit supaya HTTPS-nya tidak memunculkan peringatan sebelum
+# redirect dikirim.
+www.cpak.my.id {
+	redir https://cpak.my.id{uri} permanent
+}
+
+# ---------------------------------------------------------------------------
 # Alamat lama — tetap dipertahankan supaya tautan yang sudah beredar hidup
 # ---------------------------------------------------------------------------
 43-128-104-197.sslip.io {

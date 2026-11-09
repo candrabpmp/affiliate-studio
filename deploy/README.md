@@ -30,8 +30,10 @@ beredar memakainya, dan menghapusnya tidak memberi keuntungan apa pun.
 proxy Cloudflare). Kalau DNS belum menjawab, ACME gagal dan Caddy mengulang
 dengan jeda makin panjang — sertifikat tidak akan terbit sampai DNS benar.
 
-`www.cpak.my.id` belum ada A record-nya, jadi belum dimasukkan ke Caddyfile.
-Tambahkan record dulu, baru tambahkan `www.cpak.my.id` di blok domain.
+`www.cpak.my.id` dialihkan permanen (301) ke `cpak.my.id`, bukan dilayani
+sendiri. Sertifikatnya tetap diterbitkan terpisah supaya HTTPS-nya tidak
+memunculkan peringatan sebelum redirect dikirim. A record `www` harus menunjuk
+ke IP VPS yang sama — bukan ke server hosting lain.
 
 IP mentah `http://43.128.104.197` dialihkan permanen ke domain utama, supaya
 tidak ada yang tertinggal di HTTP.
