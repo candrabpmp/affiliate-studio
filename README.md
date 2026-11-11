@@ -57,8 +57,18 @@ python server.py
 # buka http://127.0.0.1:8787/
 ```
 
-Tidak ada dependensi pihak ketiga — hanya modul bawaan Python. Data tersimpan
-di `data/affiliate.db` (SQLite), tidak di browser.
+Tidak ada dependensi pihak ketiga untuk mode bawaan — hanya modul bawaan
+Python. Data tersimpan di `data/affiliate.db` (SQLite), tidak di browser.
+
+Kalau mau memakai PostgreSQL (begitulah VPS menjalankannya), isi DSN-nya:
+
+```bash
+AFFILIATE_PG=postgresql://user:sandi@127.0.0.1:5432/affiliate_studio python server.py
+```
+
+Butuh `psycopg2` di mesin itu. Pindah isi database lama dengan
+`scripts/migrasi_pg.py`; di VPS semuanya diurus `scripts/set-pg.py`
+(lihat `deploy/README.md`).
 
 Di Windows bisa juga klik `mulai.bat`.
 
@@ -68,13 +78,13 @@ key tersimpan di `data/` yang tidak ikut di-commit.
 ## Struktur
 
 ```
-server.py          server HTTP + SQLite, tanpa dependensi
+server.py          server HTTP + database (PostgreSQL / SQLite), tanpa dependensi
 app.js             UI dan alur kerja
 agents.js          orkestrasi Planner → Writer → Reviewer
 rulebook.js        8 aturan, masing-masing dengan dasar hukum
 styles.css         tampilan
 index.html         halaman aplikasi
-scripts/           pengambilan data produk dari product sheet
+scripts/           pengambilan data produk + alat deploy (set-pg, set-llm-server)
 assets/            media produk (gambar + video) untuk demo offline
 tests/             runner 20 kasus uji + hasilnya
 ```

@@ -88,13 +88,58 @@ sebagai argumen, bukan variabel.
 
 | Lokasi | Isi |
 |---|---|
-| `/opt/affiliate-studio/` | aplikasi, `assets/`, `data/affiliate.db` |
-| `/opt/affiliate-studio/.env` | `AFFILIATE_HOST`, `PORT`, `ORIGIN` (mode 640, milik root) |
+| `/opt/affiliate-studio/` | aplikasi, `assets/`, `data/` (cadangan SQLite + video) |
+| `/opt/affiliate-studio/.env` | `AFFILIATE_HOST`, `PORT`, `ORIGIN`, `LLM_*`, `AFFILIATE_PG` (mode 600, milik root) |
+| PostgreSQL 16 `affiliate_studio` | tabel `state` + `snapshot` — database yang dipakai |
 | `/etc/systemd/system/affiliate-studio.service` | layanan, auto-restart |
 | `/etc/caddy/Caddyfile` | TLS otomatis + reverse proxy |
 
 Server Python **tetap di `127.0.0.1:8787`** — hanya Caddy yang menghadap
 internet. Port 8787 tidak terbuka, jadi tidak ada jalan memutar melewati TLS.
+
+---
+
+## Database: PostgreSQL, dengan SQLite sebagai bawaan
+
+Seluruh isi aplikasi ada di **dua tabel**: `state` (satu baris JSON berisi semua
+produk, draft, setelan) dan `snapshot` (riwayat revisi, 60 terakhir). Sejak
+11 Nov 2026 VPS memakai PostgreSQL 16. SQLite tetap jadi bawaan supaya
+`python server.py` di laptop (dan seluruh skrip uji di `_uji/`) jalan tanpa
+server database.
+
+| `AFFILIATE_PG` | Yang dipakai |
+|---|---|
+| kosong | SQLite `data/affiliate.db` |
+| terisi DSN | PostgreSQL |
+
+### Memasang atau mengganti sandi
+
+Isi `_deploy/pg-server.txt` (tidak ikut git — berisi sandi), lalu dari laptop:
+
+```bash
+python scripts/set-pg.py            # buat role+db, migrasi, verifikasi, aktifkan
+python scripts/set-pg.py --cek      # periksa yang sedang terpasang
+python scripts/set-pg.py --hapus    # kembali ke SQLite
+```
+
+Urutannya sengaja dibuat begitu: layanan **dihentikan** dulu, isi SQLite
+disalin, lalu dibandingkan — SHA-256 isi body, jumlah produk, jumlah snapshot,
+rentang revisi. **Hanya kalau identik** `.env` diubah dan layanan dinyalakan
+kembali. Kalau satu langkah gagal, `.env` tidak disentuh dan layanan hidup lagi
+dengan SQLite; situs tidak pernah ditinggal mati karena percobaan pindah
+database.
+
+Kalau `PASSWORD` di txt diganti lalu skrip dijalankan lagi, sandi role di
+server ikut diganti dan aplikasi tetap tersambung — tidak ada data yang hilang.
+
+Yang perlu diingat:
+
+- driver: `sudo apt install -y python3-psycopg2` (skrip memasangnya sendiri)
+- `data/affiliate.db` **tidak dihapus** — masih jadi cadangan; hapus manual kalau sudah yakin
+- `assets/` dan `data/video/` tetap di disk, tidak masuk database
+- cadangan logis: `sudo -u postgres pg_dump affiliate_studio > /var/backups/affiliate-$(date +%F).sql`
+- sandi `postgres` (superuser) hanya perlu kalau mau masuk lewat pgAdmin/DBeaver;
+  akses lokal `sudo -u postgres psql` tetap jalan tanpa sandi (autentikasi peer)
 
 ---
 

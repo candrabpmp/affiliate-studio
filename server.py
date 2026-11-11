@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""Server lokal Affiliate Studio — menyimpan data ke SQLite, bukan ke browser.
+"""Server lokal Affiliate Studio — menyimpan data ke database, bukan ke browser.
 
 Kenapa ini ada
 --------------
 localStorage terikat pada satu browser + satu origin. Buka di browser lain,
-atau lewat port lain, datanya tidak ada. Server ini menyimpan state ke satu
-file SQLite di folder data/, jadi semua browser di mesin ini membaca sumber
-yang sama.
+atau lewat port lain, datanya tidak ada. Server ini menyimpan state di satu
+tempat (PostgreSQL di VPS, SQLite di mesin lokal), jadi semua browser membaca
+sumber yang sama.
+
+Penyimpanan
+-----------
+Bawaannya SQLite: satu file di data/affiliate.db, tanpa paket tambahan.
+Kalau AFFILIATE_PG diisi DSN PostgreSQL, server memakai PostgreSQL:
+
+    AFFILIATE_PG=postgresql://affiliate:rahasia@127.0.0.1:5432/affiliate_studio
+
+Butuh driver psycopg2 di mesin itu (sudo apt install -y python3-psycopg2).
+Pindah isi database lama dengan scripts/migrasi_pg.py.
 
 Cara pakai
 ----------
@@ -14,7 +24,7 @@ Cara pakai
     buka http://127.0.0.1:8787/
 
 Tanpa argumen lain. Hanya mendengarkan di 127.0.0.1 (tidak terekspos ke
-jaringan). Tidak butuh paket tambahan — hanya modul bawaan Python.
+jaringan).
 
 API
 ---
@@ -22,7 +32,7 @@ GET  /api/state            -> { rev, updatedAt, bytes, state }
 GET  /api/state?rev=N      -> snapshot revisi tertentu
 PUT  /api/state            -> body {"state": {...}} ; simpan + snapshot
 GET  /api/history?limit=20 -> daftar snapshot (tanpa isi)
-GET  /api/health           -> { ok, db, rev }
+GET  /api/health           -> { ok, store, rev }
 POST /api/extract          -> mulai ekstraksi detail (proses terpisah)
 GET  /api/extract          -> status/progres ekstraksi
 """
@@ -45,6 +55,14 @@ ROOT = Path(__file__).resolve().parent
 # AFFILIATE_DB bisa menunjuk file lain — dipakai untuk uji coba supaya database
 # asli tidak pernah tersentuh.
 DB_PATH = Path(os.environ.get("AFFILIATE_DB") or (ROOT / "data" / "affiliate.db"))
+
+# ---------------------------------------------------------------- penyimpanan
+# PostgreSQL dipakai di VPS; SQLite tetap jadi bawaan supaya pengembangan di
+# mesin tanpa server database (dan semua skrip uji di _uji/) tetap jalan.
+# DSN dibaca sekali di awal: mengubahnya butuh restart layanan.
+PG_DSN = (os.environ.get("AFFILIATE_PG") or os.environ.get("DATABASE_URL") or "").strip()
+STORE = "postgres" if PG_DSN else "sqlite"
+
 # Di localhost cukup 127.0.0.1. Di VPS server tetap di loopback dan Caddy yang
 # menghadap internet, jadi default ini sengaja TIDAK diubah menjadi 0.0.0.0.
 # Kalau benar-benar perlu mendengarkan langsung tanpa reverse proxy, set
@@ -152,38 +170,84 @@ def llm_allow(ip):
         return True
 
 
-def db():
+_DDL = (
+    "CREATE TABLE IF NOT EXISTS state ("
+    " id INTEGER PRIMARY KEY CHECK (id = 1),"
+    " rev INTEGER NOT NULL DEFAULT 0,"
+    " body TEXT NOT NULL,"
+    " updated_at BIGINT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS snapshot ("
+    " rev INTEGER PRIMARY KEY,"
+    " body TEXT NOT NULL,"
+    " saved_at BIGINT NOT NULL,"
+    " bytes INTEGER NOT NULL)",
+)
+
+_siap = False
+_siap_lock = threading.Lock()
+
+
+def _q(sql):
+    """SQLite memakai ?, psycopg2 memakai %s. Satu tempat untuk menerjemahkan."""
+    return sql.replace("?", "%s") if STORE == "postgres" else sql
+
+
+def _pg():
+    """Koneksi baru ke PostgreSQL.
+
+    Satu koneksi per permintaan: server ini ThreadingHTTPServer, dan koneksi
+    psycopg2 tidak boleh dipakai bersama antar-thread. Biayanya satu handshake
+    TCP di loopback — tidak terasa dibanding satu tulisan state 85 KB.
+    """
+    try:
+        import psycopg2
+    except ImportError:
+        raise RuntimeError(
+            "AFFILIATE_PG diisi tetapi driver psycopg2 tidak ada. "
+            "Pasang dulu: sudo apt install -y python3-psycopg2"
+        )
+    return psycopg2.connect(PG_DSN, connect_timeout=10)
+
+
+def _sql():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS state (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            rev INTEGER NOT NULL DEFAULT 0,
-            body TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS snapshot (
-            rev INTEGER PRIMARY KEY,
-            body TEXT NOT NULL,
-            saved_at INTEGER NOT NULL,
-            bytes INTEGER NOT NULL
-        )
-    """)
+    return conn
+
+
+def db():
+    """Koneksi ke backend yang aktif. Skema dipastikan sekali saja per proses."""
+    global _siap
+    conn = _pg() if STORE == "postgres" else _sql()
+    if _siap:
+        return conn
+    with _siap_lock:
+        if not _siap:
+            try:
+                cur = conn.cursor()
+                for sql in _DDL:
+                    cur.execute(sql)
+                conn.commit()
+                _siap = True
+            except Exception:
+                conn.close()
+                raise
     return conn
 
 
 def read_state(rev=None):
     conn = db()
     try:
+        cur = conn.cursor()
         if rev is None:
-            row = conn.execute("SELECT rev, body, updated_at FROM state WHERE id = 1").fetchone()
+            cur.execute("SELECT rev, body, updated_at FROM state WHERE id = 1")
+            row = cur.fetchone()
             if not row:
                 return {"rev": 0, "updatedAt": None, "bytes": 0, "state": None}
             return {"rev": row[0], "updatedAt": row[2], "bytes": len(row[1]), "state": json.loads(row[1])}
-        row = conn.execute("SELECT rev, body, saved_at FROM snapshot WHERE rev = ?", (rev,)).fetchone()
+        cur.execute(_q("SELECT rev, body, saved_at FROM snapshot WHERE rev = ?"), (rev,))
+        row = cur.fetchone()
         if not row:
             return None
         return {"rev": row[0], "updatedAt": row[2], "bytes": len(row[1]), "state": json.loads(row[1])}
@@ -236,8 +300,15 @@ def write_state(body_text):
     """Simpan state baru. Mengembalikan (rev, bytes, snapshot_dibuat)."""
     conn = db()
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT rev, body, updated_at FROM state WHERE id = 1").fetchone()
+        cur = conn.cursor()
+        if STORE == "postgres":
+            # psycopg2 membuka transaksi sendiri. Kunci barisnya supaya dua
+            # penulisan bersamaan tidak mendapat nomor revisi yang sama.
+            cur.execute("SELECT rev, body, updated_at FROM state WHERE id = 1 FOR UPDATE")
+        else:
+            conn.execute("BEGIN IMMEDIATE")
+            cur.execute("SELECT rev, body, updated_at FROM state WHERE id = 1")
+        row = cur.fetchone()
         rev = (row[0] if row else 0) + 1
         now = int(time.time() * 1000)
 
@@ -246,21 +317,26 @@ def write_state(body_text):
         made = False
         if row:
             old_rev, old_body, old_at = row
-            count, last_at = conn.execute("SELECT COUNT(*), MAX(saved_at) FROM snapshot").fetchone()
+            cur.execute("SELECT COUNT(*), MAX(saved_at) FROM snapshot")
+            count, last_at = cur.fetchone()
             if count < 3 or not last_at or (now - last_at) >= SNAPSHOT_EVERY * 1000:
-                conn.execute(
-                    "INSERT OR REPLACE INTO snapshot (rev, body, saved_at, bytes) VALUES (?,?,?,?)",
+                cur.execute(
+                    _q("INSERT INTO snapshot (rev, body, saved_at, bytes) VALUES (?,?,?,?) "
+                       "ON CONFLICT (rev) DO UPDATE SET body=excluded.body, "
+                       "saved_at=excluded.saved_at, bytes=excluded.bytes"),
                     (old_rev, old_body, old_at, len(old_body)),
                 )
                 made = True
-                conn.execute(
-                    "DELETE FROM snapshot WHERE rev NOT IN (SELECT rev FROM snapshot ORDER BY rev DESC LIMIT ?)",
+                cur.execute(
+                    _q("DELETE FROM snapshot WHERE rev NOT IN "
+                       "(SELECT rev FROM snapshot ORDER BY rev DESC LIMIT ?)"),
                     (MAX_SNAPSHOTS,),
                 )
 
-        conn.execute(
-            "INSERT INTO state (id, rev, body, updated_at) VALUES (1, ?, ?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET rev=excluded.rev, body=excluded.body, updated_at=excluded.updated_at",
+        cur.execute(
+            _q("INSERT INTO state (id, rev, body, updated_at) VALUES (1, ?, ?, ?) "
+               "ON CONFLICT (id) DO UPDATE SET rev=excluded.rev, body=excluded.body, "
+               "updated_at=excluded.updated_at"),
             (rev, body_text, now),
         )
         conn.commit()
@@ -272,10 +348,13 @@ def write_state(body_text):
 def history(limit=20):
     conn = db()
     try:
-        total = conn.execute("SELECT COUNT(*) FROM snapshot").fetchone()[0]
-        rows = conn.execute(
-            "SELECT rev, saved_at, bytes FROM snapshot ORDER BY rev DESC LIMIT ?", (limit,)
-        ).fetchall()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM snapshot")
+        total = cur.fetchone()[0]
+        cur.execute(
+            _q("SELECT rev, saved_at, bytes FROM snapshot ORDER BY rev DESC LIMIT ?"), (limit,)
+        )
+        rows = cur.fetchall()
         return total, [{"rev": r[0], "savedAt": r[1], "bytes": r[2]} for r in rows]
     finally:
         conn.close()
@@ -353,30 +432,23 @@ def pending_from_state():
       detail -> belum punya data produk, harus scraping penuh
       media  -> detail sudah ada, tinggal unduh gambar/video
     """
-    conn = db()
-    try:
-        row = conn.execute("SELECT body FROM state WHERE id = 1").fetchone()
-        if not row:
-            return []
-        items = json.loads(row[0]).get("items") or []
-        out = []
-        for it in items:
-            if it.get("archived"):
-                continue
-            pid = str(it.get("productId") or "").strip()
-            if not pid:
-                continue
-            punya_detail = (it.get("detailStatus") or "") == "ok" or bool(it.get("detail"))
-            if punya_detail and punya_media(pid):
-                continue
-            out.append({
-                "id": pid,
-                "url": it.get("productUrl") or ("https://shopee.co.id/product/" + pid),
-                "need": "media" if punya_detail else "detail",
-            })
-        return out
-    finally:
-        conn.close()
+    items = (read_state().get("state") or {}).get("items") or []
+    out = []
+    for it in items:
+        if it.get("archived"):
+            continue
+        pid = str(it.get("productId") or "").strip()
+        if not pid:
+            continue
+        punya_detail = (it.get("detailStatus") or "") == "ok" or bool(it.get("detail"))
+        if punya_detail and punya_media(pid):
+            continue
+        out.append({
+            "id": pid,
+            "url": it.get("productUrl") or ("https://shopee.co.id/product/" + pid),
+            "need": "media" if punya_detail else "detail",
+        })
+    return out
 
 
 def assets_manifest():
@@ -808,7 +880,7 @@ class Handler(SimpleHTTPRequestHandler):
         path, qs = self._path()
         if path == "/api/health":
             # path database tidak perlu keluar ke publik — cukup status.
-            return self._json({"ok": True, "rev": read_state()["rev"]})
+            return self._json({"ok": True, "store": STORE, "rev": read_state()["rev"]})
         if path == "/api/state":
             rev = qs.get("rev", [None])[0]
             if rev is not None:
@@ -947,22 +1019,47 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
 
+def pg_label():
+    """DSN tanpa password, untuk baris log."""
+    return re.sub(r"(://[^:/@]+:)[^@]*@", r"\1***@", PG_DSN)
+
+
 def main():
     if "--help" in sys.argv:
         print(__doc__)
         return
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if not DB_PATH.exists():
-        print("Database baru dibuat:", DB_PATH)
-    else:
-        size = DB_PATH.stat().st_size
-        print("Database:", DB_PATH, "(%d KB)" % max(1, round(size / 1024)))
-        bak = DB_PATH.with_suffix(".db.bak")
+
+    # Di bawah systemd stdout adalah pipe, jadi print tertahan di buffer sampai
+    # proses mati — log startup tidak pernah muncul di journalctl. Baris-baris
+    # di bawah ini justru yang paling dibutuhkan saat ada masalah.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+    if STORE == "postgres":
+        print("Database: PostgreSQL", pg_label())
         try:
-            shutil.copy2(DB_PATH, bak)
-            print("Cadangan harian:", bak.name)
+            st = read_state()
+            n = len((st.get("state") or {}).get("items") or [])
+            print("  revisi %d · %d produk · %d byte" % (st["rev"], n, st["bytes"]))
         except Exception as e:
-            print("! gagal membuat cadangan:", e)
+            # Jangan matikan layanan: systemd akan mengulang terus dan gejalanya
+            # jadi "502" tanpa penjelasan. Cetak sebabnya, biarkan tetap hidup.
+            print("! PostgreSQL tidak terjangkau:", e)
+    else:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not DB_PATH.exists():
+            print("Database baru dibuat:", DB_PATH)
+        else:
+            size = DB_PATH.stat().st_size
+            print("Database:", DB_PATH, "(%d KB)" % max(1, round(size / 1024)))
+            bak = DB_PATH.with_suffix(".db.bak")
+            try:
+                shutil.copy2(DB_PATH, bak)
+                print("Cadangan harian:", bak.name)
+            except Exception as e:
+                print("! gagal membuat cadangan:", e)
 
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     print("Affiliate Studio jalan di http://%s:%d/" % (HOST, PORT))
