@@ -6,7 +6,7 @@
 /* ---------------- utils ---------------- */
 /* penanda build UI — ditampilkan di sidebar supaya gampang memastikan browser
    benar-benar memuat app.js terbaru, bukan cache lama. */
-const UI_BUILD = '2026-11-06d';
+const UI_BUILD = '2026-11-11a';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2352,6 +2352,7 @@ const STORE = {
   mode: 'connecting',   // 'connecting' | 'file' | 'server' | 'offline'
   ready: false,         // load awal dari database sudah selesai?
   rev: 0,               // revisi terakhir di database
+  store: '',            // mesin database di server: 'postgres' | 'sqlite'
   ok: true,             // tulisan terakhir berhasil?
   err: '',              // pesan kegagalan terakhir
   serverOk: true,
@@ -2374,6 +2375,9 @@ async function loadState() {
   const r = await fetch(API + '/state', { cache: 'no-store' });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const j = await r.json();
+  /* server menyebut mesin database yang dipakai ('postgres' / 'sqlite');
+     dipakai baris status di sidebar supaya tidak menebak-nebak. */
+  if (j && j.store) STORE.store = j.store;
   return j && j.state && Array.isArray(j.state.items) ? j : null;
 }
 
@@ -2559,8 +2563,10 @@ function storageLine() {
       <b>Server tidak merespons</b><br><span class="tiny">${esc(STORE.serverErr || 'gagal menyimpan')}</span>
     </div>`;
   }
-  return `<div style="margin-top:8px;line-height:1.6" class="tiny muted" title="Disimpan oleh server.py ke data/affiliate.db. Semua browser di mesin ini membaca data yang sama.">
-    <b style="color:var(--ok)">SQLite · server</b> · rev ${STORE.rev}<br>
+  const dbName = STORE.store === 'postgres' ? 'PostgreSQL'
+    : STORE.store === 'sqlite' ? 'SQLite' : 'Database';
+  return `<div style="margin-top:8px;line-height:1.6" class="tiny muted" title="Disimpan oleh server.py ke ${dbName}. Semua browser membaca data yang sama.">
+    <b style="color:var(--ok)">${dbName} · server</b> · rev ${STORE.rev}<br>
     ${STORE.pending ? '<span style="color:var(--warn)">menyimpan…</span>' : (STORE.savedAt ? fmtTime(STORE.savedAt) : '—')} · ${fmtBytes(STORE.bytes)}
     <br><span style="opacity:.7">build ${UI_BUILD}</span>
   </div>`;

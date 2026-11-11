@@ -892,6 +892,9 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json({"error": "revisi tidak ditemukan"}, 404)
             else:
                 got = read_state()
+            # Mesin database ikut disebut supaya sidebar bisa menampilkan
+            # "PostgreSQL" atau "SQLite" tanpa permintaan tambahan.
+            got["store"] = STORE
             # Kunci LLM tidak pernah keluar dari mesin ini. Dari localhost tetap
             # terkirim (pemilik aplikasi butuh); lewat alamat publik diredaksi.
             if got.get("state") and not self._is_local():
