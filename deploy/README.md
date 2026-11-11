@@ -120,7 +120,13 @@ Isi `_deploy/pg-server.txt` (tidak ikut git — berisi sandi), lalu dari laptop:
 python scripts/set-pg.py            # buat role+db, migrasi, verifikasi, aktifkan
 python scripts/set-pg.py --cek      # periksa yang sedang terpasang
 python scripts/set-pg.py --hapus    # kembali ke SQLite
+python scripts/set-pg.py --paksa    # timpa PostgreSQL dengan isi SQLite
 ```
+
+Menjalankan skrip ini berulang **aman** — itu cara mengganti sandi. Kalau
+PostgreSQL sudah berisi dan revisinya tidak ketinggalan dari SQLite, migrasi
+dilewati: menyalin SQLite yang lebih lama ke PostgreSQL yang sudah dipakai akan
+menghapus pekerjaan sejak migrasi pertama.
 
 Urutannya sengaja dibuat begitu: layanan **dihentikan** dulu, isi SQLite
 disalin, lalu dibandingkan — SHA-256 isi body, jumlah produk, jumlah snapshot,
