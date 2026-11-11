@@ -12,6 +12,12 @@ Membaca _deploy/pg-server.txt lalu mengerjakan seluruh urutannya di VPS:
     python scripts/set-pg.py            # pasang + migrasi + aktifkan
     python scripts/set-pg.py --cek      # periksa yang sedang terpasang
     python scripts/set-pg.py --hapus    # kembali ke SQLite
+    python scripts/set-pg.py --paksa    # timpa PostgreSQL dengan isi SQLite
+
+Menjalankan berkas ini berulang aman — itu cara mengganti sandi. Kalau
+PostgreSQL sudah berisi dan tidak ketinggalan dari SQLite, migrasi dilewati
+(tidak ada yang perlu disalin, dan menyalin ulang berarti menimpa data yang
+lebih baru dengan yang lama). `--paksa` untuk memaksa sebaliknya.
 
 Sandi tidak pernah dicetak dan tidak pernah muncul di daftar proses: DSN
 dikirim ke skrip migrasi lewat stdin. Kalau PASSWORD di txt kosong, skrip
@@ -42,8 +48,25 @@ SSH = ["ssh", "-i", str(SSH_KEY), "-o", "StrictHostKeyChecking=no", HOST]
 SCP = ["scp", "-q", "-i", str(SSH_KEY), "-o", "StrictHostKeyChecking=no"]
 
 
+def _run(args, **kw):
+    """subprocess.run dengan pesan yang berguna kalau programnya tidak ada.
+
+    Di Windows, ssh/scp bisa tidak ada di PATH (OpenSSH Client belum dipasang,
+    atau skrip dijalankan dari terminal yang tidak mewarisi PATH Git). Tanpa
+    penanganan ini, pengguna hanya melihat FileNotFoundError [WinError 2] tanpa
+    tahu apa yang hilang.
+    """
+    try:
+        return subprocess.run(args, capture_output=True, text=True, **kw)
+    except FileNotFoundError:
+        raise SystemExit(
+            "program %r tidak ditemukan di PATH.\n"
+            "Di Windows: pasang 'OpenSSH Client' (Settings > Apps > Optional Features)\n"
+            "atau jalankan skrip ini dari Git Bash." % args[0])
+
+
 def sh(args, **kw):
-    r = subprocess.run(args, capture_output=True, text=True, **kw)
+    r = _run(args, **kw)
     if r.returncode != 0:
         msg = (r.stderr or r.stdout or "").strip()
         raise SystemExit("perintah gagal: %s\n%s" % (" ".join(args[:3]), msg))
@@ -52,7 +75,7 @@ def sh(args, **kw):
 
 def ssh_teks(perintah, masukan=None):
     """Jalankan perintah di VPS; kembalikan (kode, stdout+stderr)."""
-    r = subprocess.run(SSH + [perintah], input=masukan, capture_output=True, text=True)
+    r = _run(SSH + [perintah], input=masukan)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -171,12 +194,11 @@ def jalankan_py(program, args=(), masukan="", pengguna=""):
     folder data/ hanya boleh ditulis user `affiliate`.
     """
     nama = "/tmp/_aff_%08x.py" % (abs(hash(program)) % 0xFFFFFFFF)
-    r = subprocess.run(SSH + ["cat > " + nama], input=program, capture_output=True, text=True)
+    r = _run(SSH + ["cat > " + nama], input=program)
     if r.returncode != 0:
         raise SystemExit("gagal mengunggah skrip bantu: " + (r.stderr or "")[-300:])
     awalan = ("sudo -u %s " % pengguna) if pengguna else ""
-    return subprocess.run(SSH + [awalan + " ".join(["python3", nama] + list(args))],
-                          input=masukan, capture_output=True, text=True)
+    return _run(SSH + [awalan + " ".join(["python3", nama] + list(args))], input=masukan)
 
 
 def uji_koneksi(dsn):
@@ -261,7 +283,7 @@ def buat_dsn(n):
     return "postgresql://%s:%s@%s:%s/%s" % (user, pw, host, port, db)
 
 
-def pasang():
+def pasang(paksa=False):
     n = baca_txt()
     for wajib in ("DATABASE", "USER"):
         if not (n.get(wajib) or "").strip():
@@ -288,31 +310,46 @@ def pasang():
     if ada_super:
         print("sandi user postgres juga diperbarui")
 
-    # --- migrasi: layanan dihentikan dulu supaya tidak ada tulisan di tengah jalan
     env_lama = baca_env_lama()
-    print("\nmenghentikan layanan…")
-    sh(SSH + ["sudo systemctl stop affiliate-studio"])
-    try:
-        sh(SCP + [str(MIGRASI), HOST + ":" + REMOTE_MIGRASI])
-        # -u affiliate: folder data/ hanya bisa ditulis user itu, dan SQLite
-        # butuh izin tulis di folder untuk berkas -wal/-shm.
-        r = subprocess.run(
-            SSH + ["sudo -u affiliate python3 %s --sqlite %s --dsn -" % (REMOTE_MIGRASI, REMOTE_DB)],
-            input=dsn, capture_output=True, text=True)
-        print((r.stdout or "").strip())
-        if r.returncode != 0:
-            print((r.stderr or "").strip())
-            raise SystemExit("migrasi gagal — .env tidak diubah, layanan tetap memakai SQLite")
-        target = rev_sqlite()
+    rev_lama = rev_sqlite()
 
-        isi = env_lama + "\n\n# --- database (dipasang oleh scripts/set-pg.py) ---\n"
-        isi += "AFFILIATE_PG=%s\n" % dsn
-        tulis_env(isi)
+    # Menjalankan skrip ini dua kali adalah hal wajar — biasanya untuk mengganti
+    # sandi. Kalau PostgreSQL sudah berisi dan tidak ketinggalan dari SQLite,
+    # menyalin ulang berarti menimpa data yang lebih baru dengan yang lama.
+    # Jadi migrasi dilewati, bukan digagalkan.
+    lewati = info["ada_tabel"] and info["rev"] > 0 and info["rev"] >= rev_lama and not paksa
+    if lewati:
+        print("\nPostgreSQL sudah berisi revisi %d; SQLite %d — migrasi dilewati."
+              % (info["rev"], rev_lama))
+        target = info["rev"]
+        tulis_env(env_lama + "\n\n# --- database (dipasang oleh scripts/set-pg.py) ---\n"
+                  + "AFFILIATE_PG=%s\n" % dsn)
         print(".env VPS: AFFILIATE_PG ditulis")
-    except BaseException:
-        # apa pun yang terjadi, layanan harus hidup lagi dengan konfigurasi lama
-        sh(SSH + ["sudo systemctl start affiliate-studio"])
-        raise
+    else:
+        # --- migrasi: layanan dihentikan dulu supaya tidak ada tulisan di tengah jalan
+        print("\nmenghentikan layanan…")
+        sh(SSH + ["sudo systemctl stop affiliate-studio"])
+        try:
+            sh(SCP + [str(MIGRASI), HOST + ":" + REMOTE_MIGRASI])
+            # -u affiliate: folder data/ hanya bisa ditulis user itu, dan SQLite
+            # butuh izin tulis di folder untuk berkas -wal/-shm.
+            r = _run(
+                SSH + ["sudo -u affiliate python3 %s --sqlite %s --dsn -" % (REMOTE_MIGRASI, REMOTE_DB)],
+                input=dsn)
+            print((r.stdout or "").strip())
+            if r.returncode != 0:
+                print((r.stderr or "").strip())
+                raise SystemExit("migrasi gagal — .env tidak diubah, layanan tetap memakai SQLite")
+            target = rev_sqlite()
+
+            isi = env_lama + "\n\n# --- database (dipasang oleh scripts/set-pg.py) ---\n"
+            isi += "AFFILIATE_PG=%s\n" % dsn
+            tulis_env(isi)
+            print(".env VPS: AFFILIATE_PG ditulis")
+        except BaseException:
+            # apa pun yang terjadi, layanan harus hidup lagi dengan konfigurasi lama
+            sh(SSH + ["sudo systemctl start affiliate-studio"])
+            raise
 
     restart_atau_batal(env_lama)
 
@@ -322,8 +359,14 @@ def pasang():
         raise SystemExit("server masih melaporkan store=%r — periksa .env" % h.get("store"))
     if h.get("rev") != target:
         raise SystemExit("revisi tidak cocok: postgres=%s sqlite=%s" % (h.get("rev"), target))
-    print("\nSelesai. Aplikasi memakai PostgreSQL, revisi %d, isi sama dengan SQLite." % target)
-    print("Berkas SQLite TIDAK dihapus — masih jadi cadangan. Hapus manual kalau sudah yakin.")
+    if lewati:
+        print("\nSelesai. Aplikasi memakai PostgreSQL revisi %d. Tidak ada data yang disalin."
+              % target)
+        print("Berkas SQLite (revisi %d) dibiarkan apa adanya — itu cadangan lama, bukan salinan terkini."
+              % rev_lama)
+    else:
+        print("\nSelesai. Aplikasi memakai PostgreSQL, revisi %d, isi sama dengan SQLite." % target)
+        print("Berkas SQLite TIDAK dihapus — masih jadi cadangan. Hapus manual kalau sudah yakin.")
 
 
 def cek():
@@ -357,7 +400,7 @@ def main():
     if arg in ("-h", "--help"):
         print(__doc__)
         return
-    pasang()
+    pasang(paksa=(arg == "--paksa"))
 
 
 if __name__ == "__main__":
